@@ -227,9 +227,11 @@ def _predict_batch(
         results.append(
             {
                 "prediction_id": str(uuid.uuid4()),
-                "sk_id_curr": df.get("sk_id_curr", [None] * len(df)).iloc[i]
-                if "sk_id_curr" in df.columns
-                else None,
+                "sk_id_curr": (
+                    df.get("sk_id_curr", [None] * len(df)).iloc[i]
+                    if "sk_id_curr" in df.columns
+                    else None
+                ),
                 "default_probability": round(float(proba), 6),
                 "prediction_label": int(label),
                 "risk_band": _proba_to_risk_band(float(proba)),
@@ -341,13 +343,11 @@ async def submit_feedback(prediction_id: str, actual_label: int):
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(
-            sa.text(
-                f"""
+            sa.text(f"""
                 UPDATE {cfg["database"]["schema"]}.prediction_log
                 SET actual_label = :label, feedback_at = NOW()
                 WHERE prediction_id = :pid
-                """
-            ),
+                """),
             {"label": actual_label, "pid": prediction_id},
         )
     return {"status": "updated", "prediction_id": prediction_id}
