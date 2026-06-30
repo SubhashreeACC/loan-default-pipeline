@@ -5,12 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.training.trainer import (
-    _build_xgb_model,
-    _cross_validate,
-    _evaluate,
-    _validate_thresholds,
-)
+from src.training.trainer import _build_xgb_model, _cross_validate, _evaluate, _validate_thresholds
 
 
 @pytest.fixture
