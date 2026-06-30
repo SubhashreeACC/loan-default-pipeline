@@ -55,11 +55,13 @@ def upsert_dataframe(
     cols = ", ".join(f'"{c}"' for c in df.columns)
     placeholders = ", ".join(f":{c}" for c in df.columns)
 
-    insert_sql = text(f"""
+    insert_sql = text(
+        f"""
         INSERT INTO {schema}.{table} ({cols})
         VALUES ({placeholders})
         ON CONFLICT ({conflict_column}) DO NOTHING
-    """)
+    """
+    )
 
     inserted = 0
     with engine.begin() as conn:

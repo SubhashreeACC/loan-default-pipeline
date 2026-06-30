@@ -343,11 +343,13 @@ async def submit_feedback(prediction_id: str, actual_label: int):
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(
-            sa.text(f"""
+            sa.text(
+                f"""
                 UPDATE {cfg["database"]["schema"]}.prediction_log
                 SET actual_label = :label, feedback_at = NOW()
                 WHERE prediction_id = :pid
-                """),
+                """
+            ),
             {"label": actual_label, "pid": prediction_id},
         )
     return {"status": "updated", "prediction_id": prediction_id}
