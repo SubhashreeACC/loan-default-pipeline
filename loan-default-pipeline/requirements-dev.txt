@@ -1,0 +1,27 @@
+# requirements-dev.txt
+-r docker/requirements.api.txt
+
+# Testing
+pytest==8.1.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-asyncio==0.23.5
+httpx==0.27.0
+
+# Orchestration (local dev only — Airflow runs in its own container in prod)
+apache-airflow==2.8.1
+
+# Linting / formatting
+black==24.2.0
+ruff==0.3.2
+mypy==1.9.0
+isort==5.13.2
+
+# Notebooks / EDA
+jupyter==1.0.0
+matplotlib==3.8.3
+seaborn==0.13.2
+
+# Dashboard
+streamlit==1.32.0
+plotly==5.20.0

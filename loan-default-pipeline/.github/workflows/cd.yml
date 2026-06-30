@@ -1,0 +1,165 @@
+# .github/workflows/cd.yml
+name: CD - Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_API: ${{ github.repository }}/loan-default-api
+  IMAGE_NAME_MONITOR: ${{ github.repository }}/loan-default-monitoring
+
+jobs:
+
+  # Only deploy if the triggering CI workflow succeeded
+  guard:
+    name: Verify CI Passed
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'push' }}
+    steps:
+      - run: echo "CI passed — proceeding to deploy."
+
+  # ─────────────────────────────────────────────
+  build-and-push:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    needs: guard
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}
+          tags: |
+            type=sha,format=short
+            type=raw,value=latest
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.api
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push monitoring image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.monitoring
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_MONITOR }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+
+  # ─────────────────────────────────────────────
+  deploy:
+    name: Deploy to Cloud Instance
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment:
+      name: production
+      url: https://${{ secrets.PROD_API_HOST }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.PROD_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy via SSH (pull + restart containers)
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image-tag }}
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.PROD_HOST }} << 'EOF'
+            set -e
+            cd /opt/loan-default-pipeline
+
+            # Pull latest images
+            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+            docker compose pull api monitoring-dashboard
+
+            # Rolling restart with health-check gating
+            docker compose up -d --no-deps api
+            echo "Waiting for API health check..."
+            for i in {1..30}; do
+              if curl -sf http://localhost:8000/health; then
+                echo "API healthy."
+                break
+              fi
+              sleep 3
+            done
+
+            docker compose up -d --no-deps monitoring-dashboard
+
+            # Clean up old images
+            docker image prune -f
+          EOF
+
+      - name: Smoke test production endpoint
+        run: |
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://${{ secrets.PROD_API_HOST }}/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Production smoke test passed."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Production smoke test FAILED"
+          exit 1
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Deployment successful: ${{ needs.build-and-push.outputs.image-tag }}"
+          else
+            echo "❌ Deployment failed — investigate logs"
+          fi
+        # Hook point: replace with Slack/Teams webhook call as needed
+
+
+  # ─────────────────────────────────────────────
+  trigger-initial-training:
+    name: Trigger Training DAG (first deploy only)
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: contains(github.event.head_commit.message, '[bootstrap]')
+    steps:
+      - name: Trigger Airflow training DAG
+        run: |
+          curl -X POST \
+            -u "${{ secrets.AIRFLOW_USER }}:${{ secrets.AIRFLOW_PASSWORD }}" \
+            -H "Content-Type: application/json" \
+            -d '{"conf": {"trigger_reason": "initial_bootstrap"}}' \
+            "https://${{ secrets.AIRFLOW_HOST }}/api/v1/dags/loan_default_training/dagRuns"
