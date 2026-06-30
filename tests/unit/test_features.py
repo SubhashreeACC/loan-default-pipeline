@@ -179,30 +179,30 @@ class TestCategoricalEncoder:
 
 class TestEngineerFeatures:
     def test_returns_numeric_only(self, sample_raw_df):
-        X, y, pipeline = engineer_features(sample_raw_df, fit=True)
-        non_numeric = X.select_dtypes(exclude=["number"]).columns.tolist()
+        x, y, pipeline = engineer_features(sample_raw_df, fit=True)
+        non_numeric = x.select_dtypes(exclude=["number"]).columns.tolist()
         assert non_numeric == [], f"Non-numeric columns found: {non_numeric}"
 
     def test_target_separated(self, sample_raw_df):
-        X, y, pipeline = engineer_features(sample_raw_df, fit=True)
-        assert "target" not in X.columns
-        assert len(y) == len(X)
+        x, y, pipeline = engineer_features(sample_raw_df, fit=True)
+        assert "target" not in x.columns
+        assert len(y) == len(x)
 
     def test_id_not_in_features(self, sample_raw_df):
-        X, y, pipeline = engineer_features(sample_raw_df, fit=True)
-        assert "sk_id_curr" not in X.columns
+        x, y, pipeline = engineer_features(sample_raw_df, fit=True)
+        assert "sk_id_curr" not in x.columns
 
     def test_no_all_nan_column(self, sample_raw_df):
-        X, y, pipeline = engineer_features(sample_raw_df, fit=True)
-        assert not X.isnull().all().any(), "Found column(s) that are entirely NaN"
+        x, y, pipeline = engineer_features(sample_raw_df, fit=True)
+        assert not x.isnull().all().any(), "Found column(s) that are entirely NaN"
 
     def test_pipeline_reusable_at_inference(self, sample_raw_df):
-        X_train, y_train, pipeline = engineer_features(sample_raw_df, fit=True)
-        X_infer, _, _ = engineer_features(sample_raw_df.head(1), pipeline=pipeline, fit=False)
+        x_train, y_train, pipeline = engineer_features(sample_raw_df, fit=True)
+        x_infer, _, _ = engineer_features(sample_raw_df.head(1), pipeline=pipeline, fit=False)
         # Same feature set
-        assert set(X_train.columns) == set(X_infer.columns)
+        assert set(x_train.columns) == set(x_infer.columns)
 
     def test_feature_count_reasonable(self, sample_raw_df):
-        X, y, _ = engineer_features(sample_raw_df, fit=True)
-        assert X.shape[1] >= 5, "Too few features engineered"
-        assert X.shape[1] <= 200, "Too many features — likely a bug"
+        x, y, _ = engineer_features(sample_raw_df, fit=True)
+        assert x.shape[1] >= 5, "Too few features engineered"
+        assert x.shape[1] <= 200, "Too many features — likely a bug"

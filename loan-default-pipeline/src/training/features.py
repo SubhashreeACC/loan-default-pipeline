@@ -80,11 +80,11 @@ ID_COL = "sk_id_curr"
 class CreditRatioTransformer(BaseEstimator, TransformerMixin):
     """Adds domain-specific ratio features."""
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, x: pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        df = X.copy()
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        df = x.copy()
 
         # Credit-to-income ratio
         df["credit_income_ratio"] = np.where(
@@ -127,11 +127,11 @@ class CreditRatioTransformer(BaseEstimator, TransformerMixin):
 class AgeEmploymentTransformer(BaseEstimator, TransformerMixin):
     """Converts DAYS columns to years and adds employment ratio."""
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, x: pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        df = X.copy()
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        df = x.copy()
         df["age_years"] = -df["days_birth"] / 365.25
         df["employment_years"] = np.where(
             df["days_employed"].isna(),
@@ -149,11 +149,11 @@ class AgeEmploymentTransformer(BaseEstimator, TransformerMixin):
 class ExternalScoreTransformer(BaseEstimator, TransformerMixin):
     """Aggregates the three external credit scores."""
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, x: pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        df = X.copy()
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        df = x.copy()
         ext_cols = ["ext_source_1", "ext_source_2", "ext_source_3"]
         df["ext_source_mean"] = df[ext_cols].mean(axis=1)
         df["ext_source_std"] = df[ext_cols].std(axis=1).fillna(0)
@@ -167,11 +167,11 @@ class FlagAggregatorTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, flag_cols: list[str] = FLAG_COLS):
         self.flag_cols = flag_cols
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, x: pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        df = X.copy()
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        df = x.copy()
         available_flags = [c for c in self.flag_cols if c in df.columns]
         region_flags = [c for c in available_flags if "region" in c or "city" in c]
         if region_flags:
@@ -195,25 +195,25 @@ class CategoricalEncoder(BaseEstimator, TransformerMixin):
         self.encoding_map_: dict[str, list[str]] = {}
         self.columns_: list[str] = []
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, x: pd.DataFrame, y=None):
         self.encoding_map_ = {}
         self.columns_ = []
 
         for col in RAW_CATEGORICAL_COLS:
-            if col not in X.columns:
+            if col not in x.columns:
                 continue
-            n_unique = X[col].nunique()
+            n_unique = x[col].nunique()
             if n_unique > self.max_cardinality:
                 logger.debug("Dropping high-cardinality column: %s (%d unique)", col, n_unique)
                 continue
-            top_vals = X[col].value_counts().head(self.top_n).index.tolist()
+            top_vals = x[col].value_counts().head(self.top_n).index.tolist()
             self.encoding_map_[col] = top_vals
             for val in top_vals:
                 self.columns_.append(f"{col}_{val}".lower().replace(" ", "_"))
         return self
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        df = X.copy()
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        df = x.copy()
         for col, top_vals in self.encoding_map_.items():
             if col not in df.columns:
                 # Column absent at inference → fill all dummies with 0
@@ -270,7 +270,7 @@ def engineer_features(
 
     Returns
     -------
-    X_features, y_target, fitted_pipeline
+    x_features, y_target, fitted_pipeline
     """
     pipeline = pipeline or build_feature_pipeline()
 
@@ -292,36 +292,36 @@ def engineer_features(
         ]
         if c in df.columns
     ]
-    X = df.drop(columns=drop_cols)
+    x = df.drop(columns=drop_cols)
 
     if fit:
-        X_transformed = pipeline.fit_transform(X)
+        x_transformed = pipeline.fit_transform(X)
     else:
-        X_transformed = pipeline.transform(X)
+        x_transformed = pipeline.transform(X)
 
     # Ensure numeric output
-    if isinstance(X_transformed, pd.DataFrame):
-        X_out = X_transformed.select_dtypes(include=[np.number])
+    if isinstance(x_transformed, pd.DataFrame):
+        x_out = x_transformed.select_dtypes(include=[np.number])
     else:
-        X_out = pd.DataFrame(X_transformed)
+        x_out = pd.DataFrame(x_transformed)
 
     # Remove near-zero variance features
     var_threshold = feat_cfg.get("variance_threshold", 0.01)
-    low_var_cols = X_out.columns[X_out.var() < var_threshold].tolist()
+    low_var_cols = x_out.columns[x_out.var() < var_threshold].tolist()
     if low_var_cols:
         logger.debug("Dropping %d low-variance columns: %s", len(low_var_cols), low_var_cols)
-        X_out = X_out.drop(columns=low_var_cols)
+        x_out = x_out.drop(columns=low_var_cols)
 
     # Remove highly correlated features
     corr_threshold = feat_cfg.get("correlation_threshold", 0.95)
-    X_out = _drop_correlated_features(X_out, corr_threshold)
+    x_out = _drop_correlated_features(x_out, corr_threshold)
 
     logger.info(
         "Feature engineering complete: %d columns → %d features",
         len(df.columns),
-        len(X_out.columns),
+        len(x_out.columns),
     )
-    return X_out, y, pipeline
+    return x_out, y, pipeline
 
 
 def _drop_correlated_features(df: pd.DataFrame, threshold: float) -> pd.DataFrame:

@@ -86,11 +86,11 @@ def train(
 
         # ── 1. Feature engineering ───────────────
         logger.info("Engineering features from %d raw records", len(df))
-        X, y, feat_pipeline = engineer_features(df, fit=True)
+        x, y, feat_pipeline = engineer_features(df, fit=True)
 
-        if len(X) < cfg["data"]["min_training_rows"]:
+        if len(x) < cfg["data"]["min_training_rows"]:
             raise ValueError(
-                f"Insufficient training data: {len(X)} rows "
+                f"Insufficient training data: {len(x)} rows "
                 f"(minimum {cfg['data']['min_training_rows']})"
             )
 
@@ -98,11 +98,11 @@ def train(
         test_size = cfg["data"]["test_split"]
         val_size = cfg["data"]["val_split"] / (1 - test_size)
 
-        X_trainval, X_test, y_trainval, y_test = train_test_split(
-            X, y, test_size=test_size, stratify=y, random_state=xgb_cfg["random_state"]
+        x_trainval, x_test, y_trainval, y_test = train_test_split(
+            x, y, test_size=test_size, stratify=y, random_state=xgb_cfg["random_state"]
         )
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_trainval,
+        x_train, x_val, y_train, y_val = train_test_split(
+            x_trainval,
             y_trainval,
             test_size=val_size,
             stratify=y_trainval,
@@ -111,19 +111,19 @@ def train(
 
         logger.info(
             "Split: train=%d  val=%d  test=%d  default_rate=%.3f",
-            len(X_train),
-            len(X_val),
-            len(X_test),
+            len(x_train),
+            len(x_val),
+            len(x_test),
             y_train.mean(),
         )
 
         # ── 3. Log parameters ────────────────────
         mlflow.log_params(
             {
-                "n_training_rows": len(X_train),
-                "n_val_rows": len(X_val),
-                "n_test_rows": len(X_test),
-                "n_features": X_train.shape[1],
+                "n_training_rows": len(x_train),
+                "n_val_rows": len(x_val),
+                "n_test_rows": len(x_test),
+                "n_features": x_train.shape[1],
                 "train_default_rate": float(y_train.mean()),
                 **xgb_cfg,
             }
@@ -138,7 +138,7 @@ def train(
         )
 
         # ── 4. Cross-validation ──────────────────
-        cv_scores = _cross_validate(X_trainval, y_trainval, cv_folds)
+        cv_scores = _cross_validate(x_trainval, y_trainval, cv_folds)
         mlflow.log_metrics(
             {
                 "cv_auc_mean": cv_scores["auc_mean"],
@@ -154,15 +154,15 @@ def train(
         # ── 5. Final model training ──────────────
         model = _build_xgb_model()
         model.fit(
-            X_train,
+            x_train,
             y_train,
-            eval_set=[(X_val, y_val)],
+            eval_set=[(x_val, y_val)],
             verbose=100,
         )
 
         # ── 6. Evaluation ────────────────────────
-        test_metrics = _evaluate(model, X_test, y_test, prefix="test")
-        val_metrics = _evaluate(model, X_val, y_val, prefix="val")
+        test_metrics = _evaluate(model, x_test, y_test, prefix="test")
+        val_metrics = _evaluate(model, x_val, y_val, prefix="val")
         mlflow.log_metrics({**test_metrics, **val_metrics})
 
         logger.info(
@@ -176,7 +176,7 @@ def train(
         # ── 7. Artefacts ─────────────────────────
         with tempfile.TemporaryDirectory() as tmp:
             _save_artefacts(
-                model, feat_pipeline, X_train, y_test, model.predict_proba(X_test)[:, 1], tmp
+                model, feat_pipeline, x_train, y_test, model.predict_proba(x_test)[:, 1], tmp
             )
 
         # ── 8. Log model to registry ─────────────
@@ -184,7 +184,7 @@ def train(
             xgb_model=model,
             artifact_path="model",
             registered_model_name=cfg["mlflow"]["model_name"],
-            input_example=X_train.head(5),
+            input_example=x_train.head(5),
         )
 
         # ── 9. Promote to staging / production ───
@@ -198,8 +198,8 @@ def train(
             "run_id": run_id,
             "model_version": model_version,
             "metrics": {**test_metrics, **cv_scores},
-            "n_features": X_train.shape[1],
-            "feature_names": list(X_train.columns),
+            "n_features": x_train.shape[1],
+            "feature_names": list(x_train.columns),
         }
 
 
@@ -285,13 +285,13 @@ def _evaluate(
 # ─────────────────────────────────────────────
 
 
-def _save_artefacts(model, feat_pipeline, X_train, y_test, y_proba, tmp_dir: str) -> None:
+def _save_artefacts(model, feat_pipeline, x_train, y_test, y_proba, tmp_dir: str) -> None:
     tmp = Path(tmp_dir)
 
     # Feature importance
     fi = pd.DataFrame(
         {
-            "feature": X_train.columns,
+            "feature": x_train.columns,
             "importance": model.feature_importances_,
         }
     ).sort_values("importance", ascending=False)
@@ -314,7 +314,7 @@ def _save_artefacts(model, feat_pipeline, X_train, y_test, y_proba, tmp_dir: str
 
     # Feature names
     features_path = tmp / "feature_names.json"
-    features_path.write_text(json.dumps(list(X_train.columns)))
+    features_path.write_text(json.dumps(list(x_train.columns)))
     mlflow.log_artifact(str(features_path))
 
 

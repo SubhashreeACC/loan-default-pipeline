@@ -99,17 +99,17 @@ class TestEndToEndFeaturePipeline:
         df = get_training_data()
         test_rows = df[df["sk_id_curr"] >= 900000].reset_index(drop=True)
 
-        X, y, pipeline = engineer_features(test_rows, fit=True)
+        x, y, pipeline = engineer_features(test_rows, fit=True)
 
-        assert len(X) == len(test_rows)
+        assert len(x) == len(test_rows)
         assert len(y) == len(test_rows)
-        assert X.select_dtypes(exclude=["number"]).empty
+        assert x.select_dtypes(exclude=["number"]).empty
 
     def test_pipeline_consistent_on_subset(self, sample_batch):
         ingest_dataframe(sample_batch, source_label="test")
         df = get_training_data()
         test_rows = df[df["sk_id_curr"] >= 900000].reset_index(drop=True)
 
-        X_full, y_full, pipeline = engineer_features(test_rows, fit=True)
-        X_subset, _, _ = engineer_features(test_rows.head(5), pipeline=pipeline, fit=False)
-        assert set(X_full.columns) == set(X_subset.columns)
+        x_full, y_full, pipeline = engineer_features(test_rows, fit=True)
+        x_subset, _, _ = engineer_features(test_rows.head(5), pipeline=pipeline, fit=False)
+        assert set(x_full.columns) == set(x_subset.columns)
