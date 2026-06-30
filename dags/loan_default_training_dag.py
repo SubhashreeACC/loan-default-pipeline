@@ -154,7 +154,7 @@ def engineer_features_task(**context) -> dict:
     days_lookback = params.get("days_lookback", 365)
 
     df = get_training_data(days_lookback=days_lookback)
-    X, y, pipeline = engineer_features(df, fit=True)
+    x, y, pipeline = engineer_features(df, fit=True)
 
     # Persist pipeline for use during serving
     pipeline_path = "/tmp/feature_pipeline.pkl"
@@ -162,14 +162,14 @@ def engineer_features_task(**context) -> dict:
         pickle.dump(pipeline, f)
 
     result = {
-        "n_rows": len(X),
-        "n_features": X.shape[1],
-        "feature_names": list(X.columns),
+        "n_rows": len(x),
+        "n_features": x.shape[1],
+        "feature_names": list(x.columns),
         "pipeline_path": pipeline_path,
         "default_rate": float(y.mean()),
     }
     context["ti"].xcom_push("feature_engineering_result", result)
-    logger.info("Feature engineering: %d rows × %d features", len(X), X.shape[1])
+    logger.info("Feature engineering: %d rows × %d features", len(x), x.shape[1])
     return result
 
 

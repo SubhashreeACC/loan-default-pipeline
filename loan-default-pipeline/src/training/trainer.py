@@ -229,22 +229,22 @@ def _build_xgb_model() -> xgb.XGBClassifier:
 # ─────────────────────────────────────────────
 
 
-def _cross_validate(X: pd.DataFrame, y: pd.Series, n_folds: int) -> dict:
+def _cross_validate(x: pd.DataFrame, y: pd.Series, n_folds: int) -> dict:
     skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
     auc_scores = []
-    for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
+    for fold, (train_idx, val_idx) in enumerate(skf.split(x, y)):
         model = _build_xgb_model()
         # Use last 20% of fold for early stopping
         n_es = max(1, int(len(train_idx) * 0.2))
         es_idx = train_idx[-n_es:]
         tr_idx = train_idx[:-n_es]
         model.fit(
-            X.iloc[tr_idx],
+            x.iloc[tr_idx],
             y.iloc[tr_idx],
-            eval_set=[(X.iloc[es_idx], y.iloc[es_idx])],
+            eval_set=[(x.iloc[es_idx], y.iloc[es_idx])],
             verbose=False,
         )
-        proba = model.predict_proba(X.iloc[val_idx])[:, 1]
+        proba = model.predict_proba(x.iloc[val_idx])[:, 1]
         score = roc_auc_score(y.iloc[val_idx], proba)
         auc_scores.append(score)
         logger.debug("  Fold %d AUC: %.4f", fold + 1, score)
@@ -263,12 +263,12 @@ def _cross_validate(X: pd.DataFrame, y: pd.Series, n_folds: int) -> dict:
 
 def _evaluate(
     model: xgb.XGBClassifier,
-    X: pd.DataFrame,
+    x: pd.DataFrame,
     y: pd.Series,
     prefix: str = "test",
     threshold: float = 0.5,
 ) -> dict:
-    proba = model.predict_proba(X)[:, 1]
+    proba = model.predict_proba(x)[:, 1]
     preds = (proba >= threshold).astype(int)
     return {
         f"{prefix}_auc_roc": float(roc_auc_score(y, proba)),

@@ -210,20 +210,20 @@ def _predict_batch(
         )
 
     try:
-        X, _, _ = engineer_features(df, pipeline=state.feature_pipeline, fit=False)
+        features, _, _ = engineer_features(df, pipeline=state.feature_pipeline, fit=False)
     except Exception as e:
         logger.error("Feature engineering failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Feature engineering error: {e}",
-        )
+        ) from e
 
-    probas = state.model.predict_proba(X)[:, 1]
+    probas = state.model.predict_proba(features)[:, 1]
     labels = (probas >= threshold).astype(int)
     now = datetime.utcnow().isoformat()
 
     results = []
-    for i, (proba, label) in enumerate(zip(probas, labels)):
+    for i, (proba, label) in enumerate(zip(probas, labels, strict=False)):
         results.append(
             {
                 "prediction_id": str(uuid.uuid4()),

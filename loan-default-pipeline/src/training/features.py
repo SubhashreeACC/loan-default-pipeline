@@ -228,6 +228,45 @@ class CategoricalEncoder(BaseEstimator, TransformerMixin):
         return df
 
 
+class LowVarianceFilter(BaseEstimator, TransformerMixin):
+    """Drops columns with near-zero variance, learned at fit time."""
+
+    def __init__(self, threshold: float = 0.01):
+        self.threshold = threshold
+        self.to_keep_: list[str] = []
+
+    def fit(self, x: pd.DataFrame, y=None):
+        self.to_keep_ = [c for c in x.columns if x[c].var() >= self.threshold]
+        if not self.to_keep_:
+            self.to_keep_ = list(x.columns)
+        return self
+
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        keep = [c for c in self.to_keep_ if c in x.columns]
+        return x[keep]
+
+
+class CorrelatedFeatureDropper(BaseEstimator, TransformerMixin):
+    """Drops one feature from each highly correlated pair, learned at fit time."""
+
+    def __init__(self, threshold: float = 0.95):
+        self.threshold = threshold
+        self.to_drop_: list[str] = []
+
+    def fit(self, x: pd.DataFrame, y=None):
+        if x.shape[1] < 2:
+            self.to_drop_ = []
+            return self
+        corr = x.corr().abs()
+        upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+        self.to_drop_ = [c for c in upper.columns if any(upper[c] > self.threshold)]
+        return self
+
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        drop = [c for c in self.to_drop_ if c in x.columns]
+        return x.drop(columns=drop)
+
+
 # ─────────────────────────────────────────────
 # Feature pipeline
 # ─────────────────────────────────────────────
@@ -248,6 +287,18 @@ def build_feature_pipeline() -> Pipeline:
                 "cat_encode",
                 CategoricalEncoder(
                     max_cardinality=feat_cfg["max_cardinality"],
+                ),
+            ),
+            (
+                "low_var_filter",
+                LowVarianceFilter(
+                    threshold=feat_cfg.get("variance_threshold", 0.01),
+                ),
+            ),
+            (
+                "corr_dropper",
+                CorrelatedFeatureDropper(
+                    threshold=feat_cfg.get("correlation_threshold", 0.95),
                 ),
             ),
         ]
@@ -276,7 +327,6 @@ def engineer_features(
 
     # Preserve target & ID before transforming
     y = df[TARGET_COL].copy() if TARGET_COL in df.columns else pd.Series(dtype=int)
-    ids = df[ID_COL].copy() if ID_COL in df.columns else None
 
     # Select feature columns
     drop_cols = [
@@ -295,9 +345,9 @@ def engineer_features(
     x = df.drop(columns=drop_cols)
 
     if fit:
-        x_transformed = pipeline.fit_transform(X)
+        x_transformed = pipeline.fit_transform(x)
     else:
-        x_transformed = pipeline.transform(X)
+        x_transformed = pipeline.transform(x)
 
     # Ensure numeric output
     if isinstance(x_transformed, pd.DataFrame):
@@ -305,30 +355,9 @@ def engineer_features(
     else:
         x_out = pd.DataFrame(x_transformed)
 
-    # Remove near-zero variance features
-    var_threshold = feat_cfg.get("variance_threshold", 0.01)
-    low_var_cols = x_out.columns[x_out.var() < var_threshold].tolist()
-    if low_var_cols:
-        logger.debug("Dropping %d low-variance columns: %s", len(low_var_cols), low_var_cols)
-        x_out = x_out.drop(columns=low_var_cols)
-
-    # Remove highly correlated features
-    corr_threshold = feat_cfg.get("correlation_threshold", 0.95)
-    x_out = _drop_correlated_features(x_out, corr_threshold)
-
     logger.info(
         "Feature engineering complete: %d columns → %d features",
         len(df.columns),
         len(x_out.columns),
     )
     return x_out, y, pipeline
-
-
-def _drop_correlated_features(df: pd.DataFrame, threshold: float) -> pd.DataFrame:
-    corr_matrix = df.corr().abs()
-    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-    to_drop = [c for c in upper.columns if any(upper[c] > threshold)]
-    if to_drop:
-        logger.debug("Dropping %d correlated features", len(to_drop))
-        df = df.drop(columns=to_drop)
-    return df

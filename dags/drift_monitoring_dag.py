@@ -305,7 +305,7 @@ t_save_report = PythonOperator(
 # Dependencies
 # ─────────────────────────────────────────────
 
-[t_ref, t_cur] >> [t_data_drift, t_pred_drift, t_perf]
-[t_data_drift, t_pred_drift, t_perf] >> t_evaluate
-t_evaluate >> [t_trigger_retrain, t_no_retrain]
-[t_trigger_retrain, t_no_retrain] >> t_save_report
+[t_ref, t_cur] >> [t_data_drift, t_pred_drift, t_perf]  # noqa: B018
+[t_data_drift, t_pred_drift, t_perf] >> t_evaluate  # noqa: B018
+t_evaluate >> [t_trigger_retrain, t_no_retrain]  # noqa: B018
+[t_trigger_retrain, t_no_retrain] >> t_save_report  # noqa: B018

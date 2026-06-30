@@ -101,9 +101,9 @@ class TestEndToEndFeaturePipeline:
 
         x, y, pipeline = engineer_features(test_rows, fit=True)
 
-        assert len(X) == len(test_rows)
+        assert len(x) == len(test_rows)
         assert len(y) == len(test_rows)
-        assert X.select_dtypes(exclude=["number"]).empty
+        assert x.select_dtypes(exclude=["number"]).empty
 
     def test_pipeline_consistent_on_subset(self, sample_batch):
         ingest_dataframe(sample_batch, source_label="test")

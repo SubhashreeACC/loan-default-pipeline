@@ -80,11 +80,11 @@ ID_COL = "sk_id_curr"
 class CreditRatioTransformer(BaseEstimator, TransformerMixin):
     """Adds domain-specific ratio features."""
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, x: pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        df = X.copy()
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        df = x.copy()
 
         # Credit-to-income ratio
         df["credit_income_ratio"] = np.where(
@@ -127,11 +127,11 @@ class CreditRatioTransformer(BaseEstimator, TransformerMixin):
 class AgeEmploymentTransformer(BaseEstimator, TransformerMixin):
     """Converts DAYS columns to years and adds employment ratio."""
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, x: pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        df = X.copy()
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        df = x.copy()
         df["age_years"] = -df["days_birth"] / 365.25
         df["employment_years"] = np.where(
             df["days_employed"].isna(),
@@ -149,11 +149,11 @@ class AgeEmploymentTransformer(BaseEstimator, TransformerMixin):
 class ExternalScoreTransformer(BaseEstimator, TransformerMixin):
     """Aggregates the three external credit scores."""
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, x: pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        df = X.copy()
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        df = x.copy()
         ext_cols = ["ext_source_1", "ext_source_2", "ext_source_3"]
         df["ext_source_mean"] = df[ext_cols].mean(axis=1)
         df["ext_source_std"] = df[ext_cols].std(axis=1).fillna(0)
@@ -167,11 +167,11 @@ class FlagAggregatorTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, flag_cols: list[str] = FLAG_COLS):
         self.flag_cols = flag_cols
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, x: pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        df = X.copy()
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        df = x.copy()
         available_flags = [c for c in self.flag_cols if c in df.columns]
         region_flags = [c for c in available_flags if "region" in c or "city" in c]
         if region_flags:
@@ -195,25 +195,25 @@ class CategoricalEncoder(BaseEstimator, TransformerMixin):
         self.encoding_map_: dict[str, list[str]] = {}
         self.columns_: list[str] = []
 
-    def fit(self, X: pd.DataFrame, y=None):
+    def fit(self, x: pd.DataFrame, y=None):
         self.encoding_map_ = {}
         self.columns_ = []
 
         for col in RAW_CATEGORICAL_COLS:
-            if col not in X.columns:
+            if col not in x.columns:
                 continue
-            n_unique = X[col].nunique()
+            n_unique = x[col].nunique()
             if n_unique > self.max_cardinality:
                 logger.debug("Dropping high-cardinality column: %s (%d unique)", col, n_unique)
                 continue
-            top_vals = X[col].value_counts().head(self.top_n).index.tolist()
+            top_vals = x[col].value_counts().head(self.top_n).index.tolist()
             self.encoding_map_[col] = top_vals
             for val in top_vals:
                 self.columns_.append(f"{col}_{val}".lower().replace(" ", "_"))
         return self
 
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        df = X.copy()
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        df = x.copy()
         for col, top_vals in self.encoding_map_.items():
             if col not in df.columns:
                 # Column absent at inference → fill all dummies with 0
@@ -226,6 +226,45 @@ class CategoricalEncoder(BaseEstimator, TransformerMixin):
                 df[dummy_col] = (df[col] == val).astype(int)
             df = df.drop(columns=[col])
         return df
+
+
+class LowVarianceFilter(BaseEstimator, TransformerMixin):
+    """Drops columns with near-zero variance, learned at fit time."""
+
+    def __init__(self, threshold: float = 0.01):
+        self.threshold = threshold
+        self.to_keep_: list[str] = []
+
+    def fit(self, x: pd.DataFrame, y=None):
+        self.to_keep_ = [c for c in x.columns if x[c].var() >= self.threshold]
+        if not self.to_keep_:
+            self.to_keep_ = list(x.columns)
+        return self
+
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        keep = [c for c in self.to_keep_ if c in x.columns]
+        return x[keep]
+
+
+class CorrelatedFeatureDropper(BaseEstimator, TransformerMixin):
+    """Drops one feature from each highly correlated pair, learned at fit time."""
+
+    def __init__(self, threshold: float = 0.95):
+        self.threshold = threshold
+        self.to_drop_: list[str] = []
+
+    def fit(self, x: pd.DataFrame, y=None):
+        if x.shape[1] < 2:
+            self.to_drop_ = []
+            return self
+        corr = x.corr().abs()
+        upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+        self.to_drop_ = [c for c in upper.columns if any(upper[c] > self.threshold)]
+        return self
+
+    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+        drop = [c for c in self.to_drop_ if c in x.columns]
+        return x.drop(columns=drop)
 
 
 # ─────────────────────────────────────────────
@@ -248,6 +287,18 @@ def build_feature_pipeline() -> Pipeline:
                 "cat_encode",
                 CategoricalEncoder(
                     max_cardinality=feat_cfg["max_cardinality"],
+                ),
+            ),
+            (
+                "low_var_filter",
+                LowVarianceFilter(
+                    threshold=feat_cfg.get("variance_threshold", 0.01),
+                ),
+            ),
+            (
+                "corr_dropper",
+                CorrelatedFeatureDropper(
+                    threshold=feat_cfg.get("correlation_threshold", 0.95),
                 ),
             ),
         ]
@@ -276,7 +327,6 @@ def engineer_features(
 
     # Preserve target & ID before transforming
     y = df[TARGET_COL].copy() if TARGET_COL in df.columns else pd.Series(dtype=int)
-    ids = df[ID_COL].copy() if ID_COL in df.columns else None
 
     # Select feature columns
     drop_cols = [
@@ -292,29 +342,18 @@ def engineer_features(
         ]
         if c in df.columns
     ]
-    X = df.drop(columns=drop_cols)
+    x = df.drop(columns=drop_cols)
 
     if fit:
-        x_transformed = pipeline.fit_transform(X)
+        x_transformed = pipeline.fit_transform(x)
     else:
-        x_transformed = pipeline.transform(X)
+        x_transformed = pipeline.transform(x)
 
     # Ensure numeric output
     if isinstance(x_transformed, pd.DataFrame):
-        X_out = x_transformed.select_dtypes(include=[np.number])
+        x_out = x_transformed.select_dtypes(include=[np.number])
     else:
-        X_out = pd.DataFrame(x_transformed)
-
-    # Remove near-zero variance features
-    var_threshold = feat_cfg.get("variance_threshold", 0.01)
-    low_var_cols = X_out.columns[X_out.var() < var_threshold].tolist()
-    if low_var_cols:
-        logger.debug("Dropping %d low-variance columns: %s", len(low_var_cols), low_var_cols)
-        x_out = x_out.drop(columns=low_var_cols)
-
-    # Remove highly correlated features
-    corr_threshold = feat_cfg.get("correlation_threshold", 0.95)
-    x_out = _drop_correlated_features(x_out, corr_threshold)
+        x_out = pd.DataFrame(x_transformed)
 
     logger.info(
         "Feature engineering complete: %d columns → %d features",
@@ -322,13 +361,3 @@ def engineer_features(
         len(x_out.columns),
     )
     return x_out, y, pipeline
-
-
-def _drop_correlated_features(df: pd.DataFrame, threshold: float) -> pd.DataFrame:
-    corr_matrix = df.corr().abs()
-    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-    to_drop = [c for c in upper.columns if any(upper[c] > threshold)]
-    if to_drop:
-        logger.debug("Dropping %d correlated features", len(to_drop))
-        df = df.drop(columns=to_drop)
-    return df

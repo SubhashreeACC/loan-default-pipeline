@@ -17,11 +17,11 @@ from src.training.trainer import (
 def binary_classification_data():
     rng = np.random.RandomState(42)
     n = 500
-    X = pd.DataFrame({f"feat_{i}": rng.normal(size=n) for i in range(10)})
+    x = pd.DataFrame({f"feat_{i}": rng.normal(size=n) for i in range(10)})
     # Make target weakly correlated with feat_0 so AUC > 0.5
-    logits = X["feat_0"] * 2 + rng.normal(scale=0.5, size=n)
+    logits = x["feat_0"] * 2 + rng.normal(scale=0.5, size=n)
     y = pd.Series((logits > np.median(logits)).astype(int))
-    return X, y
+    return x, y
 
 
 class TestBuildModel:
@@ -38,11 +38,11 @@ class TestBuildModel:
 
 class TestEvaluateModel:
     def test_evaluate_returns_expected_keys(self, binary_classification_data):
-        X, y = binary_classification_data
+        x, y = binary_classification_data
         model = _build_xgb_model()
         model.set_params(early_stopping_rounds=None)
-        model.fit(X, y)
-        metrics = _evaluate(model, X, y, prefix="test")
+        model.fit(x, y)
+        metrics = _evaluate(model, x, y, prefix="test")
         for key in [
             "test_auc_roc",
             "test_f1",
@@ -54,19 +54,19 @@ class TestEvaluateModel:
             assert key in metrics
 
     def test_auc_within_valid_range(self, binary_classification_data):
-        X, y = binary_classification_data
+        x, y = binary_classification_data
         model = _build_xgb_model()
         model.set_params(early_stopping_rounds=None)
-        model.fit(X, y)
-        metrics = _evaluate(model, X, y, prefix="test")
+        model.fit(x, y)
+        metrics = _evaluate(model, x, y, prefix="test")
         assert 0.0 <= metrics["test_auc_roc"] <= 1.0
 
     def test_better_than_random_on_separable_data(self, binary_classification_data):
-        X, y = binary_classification_data
+        x, y = binary_classification_data
         model = _build_xgb_model()
         model.set_params(early_stopping_rounds=None)
-        model.fit(X, y)
-        metrics = _evaluate(model, X, y, prefix="test")
+        model.fit(x, y)
+        metrics = _evaluate(model, x, y, prefix="test")
         assert metrics["test_auc_roc"] > 0.6
 
 
@@ -107,12 +107,12 @@ class TestValidateThresholds:
 
 class TestCrossValidate:
     def test_returns_expected_stat_keys(self, binary_classification_data):
-        X, y = binary_classification_data
-        result = _cross_validate(X, y, n_folds=3)
+        x, y = binary_classification_data
+        result = _cross_validate(x, y, n_folds=3)
         for key in ["auc_mean", "auc_std", "auc_min", "auc_max"]:
             assert key in result
 
     def test_auc_mean_in_valid_range(self, binary_classification_data):
-        X, y = binary_classification_data
-        result = _cross_validate(X, y, n_folds=3)
+        x, y = binary_classification_data
+        result = _cross_validate(x, y, n_folds=3)
         assert 0.0 <= result["auc_mean"] <= 1.0

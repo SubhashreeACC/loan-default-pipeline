@@ -52,7 +52,6 @@ def upsert_dataframe(
     if df.empty:
         return 0
 
-    tmp_table = f"_tmp_{table}_{id(df)}"
     cols = ", ".join(f'"{c}"' for c in df.columns)
     placeholders = ", ".join(f":{c}" for c in df.columns)
 

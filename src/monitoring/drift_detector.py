@@ -155,8 +155,6 @@ def run_data_drift_report(
         ]
     )
 
-    col_map = get_column_mapping(include_target=False)
-
     ref_clean = reference[NUMERICAL_FEATURES + CATEGORICAL_FEATURES].copy()
     cur_clean = current[NUMERICAL_FEATURES + CATEGORICAL_FEATURES].copy()
 
