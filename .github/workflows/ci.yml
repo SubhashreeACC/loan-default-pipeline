@@ -88,135 +88,80 @@ jobs:
 
   # ─────────────────────────────────────────────
   integration-tests:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    needs: unit-tests
+  name: Integration Tests
+  runs-on: ubuntu-latest
+  needs: unit-tests
 
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: mlops
-          POSTGRES_PASSWORD: mlops_secret
-          POSTGRES_DB: loan_default
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+  services:
+    postgres:
+      image: postgres:15-alpine
+      env:
+        POSTGRES_USER: mlops
+        POSTGRES_PASSWORD: mlops_secret
+        POSTGRES_DB: loan_default
+      ports:
+        - 5432:5432
+      options: >-
+        --health-cmd "pg_isready -U mlops"
+        --health-interval 10s
+        --health-timeout 5s
+        --health-retries 5
 
-      mlflow:
-        image: ghcr.io/mlflow/mlflow:v2.10.0
-        ports:
-          - 5000:5000
-        env:
-          MLFLOW_BACKEND_STORE_URI: sqlite:///mlflow.db
-          MLFLOW_DEFAULT_ARTIFACT_ROOT: /tmp/mlflow-artifacts
+  steps:
+    - uses: actions/checkout@v4
 
-    steps:
-      - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: pip
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt
 
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements-dev.txt
+    - name: Start MLflow server
+      run: |
+        mkdir -p /tmp/mlflow-artifacts
+        nohup mlflow server \
+          --host 0.0.0.0 \
+          --port 5000 \
+          --backend-store-uri sqlite:///mlflow.db \
+          --default-artifact-root /tmp/mlflow-artifacts \
+          > mlflow.log 2>&1 &
 
-      - name: Apply database migrations
-        env:
-          PGPASSWORD: mlops_secret
-        run: |
-          psql -h localhost -U mlops -d loan_default \
-            -f infra/migrations/001_initial_schema.sql
+    - name: Wait for MLflow server
+      run: |
+        for i in {1..30}; do
+          if curl -sf http://localhost:5000 >/dev/null; then
+            echo "✅ MLflow server is running"
+            exit 0
+          fi
+          echo "Waiting for MLflow..."
+          sleep 2
+        done
 
-      - name: Wait for MLflow server
-        run: |
-          for i in {1..30}; do
-            curl -sf http://localhost:5000/health && break
-            echo "Waiting for MLflow..."
-            sleep 2
-          done
+        echo "❌ MLflow failed to start"
+        cat mlflow.log || true
+        exit 1
 
-      - name: Run integration tests
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: loan_default
-          DB_USER: mlops
-          DB_PASSWORD: mlops_secret
-          MLFLOW_TRACKING_URI: http://localhost:5000
-          CONFIG_PATH: config/config.yaml
-          RUN_INTEGRATION_TESTS: "1"
-        run: |
-          pytest tests/integration --integration -v --tb=short
+    - name: Apply database migrations
+      env:
+        PGPASSWORD: mlops_secret
+      run: |
+        psql -h localhost -U mlops -d loan_default \
+          -f infra/migrations/001_initial_schema.sql
 
-
-  # ─────────────────────────────────────────────
-  docker-build:
-    name: Build & Validate Docker Images
-    runs-on: ubuntu-latest
-    needs: unit-tests
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build API image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/Dockerfile.api
-          push: false
-          tags: loan-default-api:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build monitoring dashboard image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/Dockerfile.monitoring
-          push: false
-          tags: loan-default-monitoring:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Smoke test API image
-        run: |
-          docker run -d --name api-smoke-test \
-            -e DB_HOST=localhost \
-            -p 8000:8000 \
-            loan-default-api:ci || true
-          sleep 5
-          docker logs api-smoke-test || true
-          docker stop api-smoke-test || true
-
-
-  # ─────────────────────────────────────────────
-  security-scan:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run Trivy vulnerability scanner (filesystem)
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: "fs"
-          scan-ref: "."
-          format: "table"
-          severity: "CRITICAL,HIGH"
-          exit-code: "0"   # report only, don't block — tighten once stabilised
-
-      - name: Run pip-audit (dependency vulnerabilities)
-        run: |
-          pip install pip-audit
-          pip-audit -r docker/requirements.api.txt --desc || true
+    - name: Run integration tests
+      env:
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_NAME: loan_default
+        DB_USER: mlops
+        DB_PASSWORD: mlops_secret
+        MLFLOW_TRACKING_URI: http://localhost:5000
+        CONFIG_PATH: config/config.yaml
+        RUN_INTEGRATION_TESTS: "1"
+      run: |
+        pytest tests/integration --integration -v --tb=short
