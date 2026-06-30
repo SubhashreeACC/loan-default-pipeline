@@ -1,5 +1,6 @@
 # tests/unit/test_api.py
 """Unit tests for the FastAPI prediction service (model mocked)."""
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -78,8 +79,14 @@ class TestPredictEndpoint:
     def test_predict_response_shape(self, client):
         resp = client.post("/predict", json=SAMPLE_APPLICATION)
         body = resp.json()
-        for key in ["prediction_id", "default_probability", "prediction_label",
-                    "risk_band", "model_version", "predicted_at"]:
+        for key in [
+            "prediction_id",
+            "default_probability",
+            "prediction_label",
+            "risk_band",
+            "model_version",
+            "predicted_at",
+        ]:
             assert key in body
 
     def test_predict_probability_in_valid_range(self, client):
@@ -107,13 +114,16 @@ class TestBatchPredictEndpoint:
 
     def test_batch_predict_counts_match(self, client):
         payload = {"applications": [SAMPLE_APPLICATION, SAMPLE_APPLICATION]}
-        with patch(
-            "src.serving.api.engineer_features",
-            return_value=(pd.DataFrame({"f1": [1.0, 1.0]}), pd.Series([0, 0]), None),
-        ), patch.object(
-            __import__("src.serving.api", fromlist=["state"]).state.model,
-            "predict_proba",
-            return_value=np.array([[0.7, 0.3], [0.6, 0.4]]),
+        with (
+            patch(
+                "src.serving.api.engineer_features",
+                return_value=(pd.DataFrame({"f1": [1.0, 1.0]}), pd.Series([0, 0]), None),
+            ),
+            patch.object(
+                __import__("src.serving.api", fromlist=["state"]).state.model,
+                "predict_proba",
+                return_value=np.array([[0.7, 0.3], [0.6, 0.4]]),
+            ),
         ):
             resp = client.post("/predict/batch", json=payload)
         body = resp.json()

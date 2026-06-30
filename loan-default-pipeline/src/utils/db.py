@@ -1,10 +1,10 @@
 # src/utils/db.py
 """SQLAlchemy engine factory and common DB helpers."""
+
 from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import Optional
 
 import pandas as pd
 import sqlalchemy as sa
@@ -42,7 +42,7 @@ def upsert_dataframe(
     table: str,
     schema: str,
     conflict_column: str,
-    engine: Optional[Engine] = None,
+    engine: Engine | None = None,
 ) -> int:
     """
     Upsert a DataFrame into a PostgreSQL table using INSERT ON CONFLICT DO NOTHING.
@@ -71,7 +71,7 @@ def upsert_dataframe(
     return inserted
 
 
-def table_exists(table: str, schema: str, engine: Optional[Engine] = None) -> bool:
+def table_exists(table: str, schema: str, engine: Engine | None = None) -> bool:
     engine = engine or get_engine()
     with engine.connect() as conn:
         result = conn.execute(
@@ -84,7 +84,7 @@ def table_exists(table: str, schema: str, engine: Optional[Engine] = None) -> bo
         return bool(result.scalar())
 
 
-def run_migration(sql_file: str, engine: Optional[Engine] = None) -> None:
+def run_migration(sql_file: str, engine: Engine | None = None) -> None:
     """Execute a SQL migration file."""
     engine = engine or get_engine()
     sql = open(sql_file).read()

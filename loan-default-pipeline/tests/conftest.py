@@ -9,6 +9,7 @@ Integration tests (tests/integration/) require:
 Mark integration tests with @pytest.mark.integration; they are skipped by
 default unless `--integration` is passed or RUN_INTEGRATION_TESTS=1 is set.
 """
+
 import os
 import uuid
 
@@ -25,16 +26,11 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
-    config.addinivalue_line(
-        "markers", "integration: mark test as requiring live infrastructure"
-    )
+    config.addinivalue_line("markers", "integration: mark test as requiring live infrastructure")
 
 
 def pytest_collection_modifyitems(config, items):
-    run_integration = (
-        config.getoption("--integration")
-        or os.getenv("RUN_INTEGRATION_TESTS") == "1"
-    )
+    run_integration = config.getoption("--integration") or os.getenv("RUN_INTEGRATION_TESTS") == "1"
     if run_integration:
         return
     skip_integration = pytest.mark.skip(
@@ -49,6 +45,7 @@ def pytest_collection_modifyitems(config, items):
 # Integration fixtures
 # ─────────────────────────────────────────────
 
+
 @pytest.fixture(scope="session")
 def trained_production_model():
     """
@@ -56,11 +53,11 @@ def trained_production_model():
     If one already exists (from a prior training DAG run), reuse it.
     Otherwise trains a quick synthetic model and forces promotion.
     """
-    from mlflow.tracking import MlflowClient
-    from src.training.trainer import setup_mlflow, train
-    from src.utils.config import get_config
     import numpy as np
     import pandas as pd
+
+    from src.training.trainer import setup_mlflow, train
+    from src.utils.config import get_config
 
     cfg = get_config()
     client = setup_mlflow()
@@ -76,30 +73,34 @@ def trained_production_model():
     ext_source_2 = rng.uniform(0, 1, n)
     target = (rng.uniform(0, 1, n) < (1 - ext_source_2) * 0.3).astype(int)
 
-    df = pd.DataFrame({
-        "sk_id_curr": range(700000, 700000 + n),
-        "target": target,
-        "amt_income_total": rng.uniform(50000, 300000, n),
-        "amt_credit": rng.uniform(100000, 2000000, n),
-        "amt_annuity": rng.uniform(10000, 80000, n),
-        "amt_goods_price": rng.uniform(90000, 1900000, n),
-        "days_birth": -rng.randint(7000, 25000, n),
-        "days_employed": -rng.randint(100, 10000, n),
-        "code_gender": rng.choice(["M", "F"], n),
-        "name_income_type": rng.choice(["Working", "Commercial associate"], n),
-        "name_education_type": rng.choice(["Higher education", "Secondary / secondary special"], n),
-        "name_family_status": rng.choice(["Married", "Single / not married"], n),
-        "name_housing_type": ["House / apartment"] * n,
-        "name_contract_type": rng.choice(["Cash loans", "Revolving loans"], n),
-        "ext_source_1": rng.uniform(0, 1, n),
-        "ext_source_2": ext_source_2,
-        "ext_source_3": rng.uniform(0, 1, n),
-        "cnt_children": rng.randint(0, 4, n),
-        "cnt_fam_members": rng.randint(1, 6, n).astype(float),
-        "flag_own_car": rng.choice(["Y", "N"], n),
-        "flag_own_realty": rng.choice(["Y", "N"], n),
-        "region_rating_client": rng.randint(1, 3, n),
-    })
+    df = pd.DataFrame(
+        {
+            "sk_id_curr": range(700000, 700000 + n),
+            "target": target,
+            "amt_income_total": rng.uniform(50000, 300000, n),
+            "amt_credit": rng.uniform(100000, 2000000, n),
+            "amt_annuity": rng.uniform(10000, 80000, n),
+            "amt_goods_price": rng.uniform(90000, 1900000, n),
+            "days_birth": -rng.randint(7000, 25000, n),
+            "days_employed": -rng.randint(100, 10000, n),
+            "code_gender": rng.choice(["M", "F"], n),
+            "name_income_type": rng.choice(["Working", "Commercial associate"], n),
+            "name_education_type": rng.choice(
+                ["Higher education", "Secondary / secondary special"], n
+            ),
+            "name_family_status": rng.choice(["Married", "Single / not married"], n),
+            "name_housing_type": ["House / apartment"] * n,
+            "name_contract_type": rng.choice(["Cash loans", "Revolving loans"], n),
+            "ext_source_1": rng.uniform(0, 1, n),
+            "ext_source_2": ext_source_2,
+            "ext_source_3": rng.uniform(0, 1, n),
+            "cnt_children": rng.randint(0, 4, n),
+            "cnt_fam_members": rng.randint(1, 6, n).astype(float),
+            "flag_own_car": rng.choice(["Y", "N"], n),
+            "flag_own_realty": rng.choice(["Y", "N"], n),
+            "region_rating_client": rng.randint(1, 3, n),
+        }
+    )
 
     result = train(df=df, run_name=f"conftest_bootstrap_{uuid.uuid4().hex[:8]}", cv_folds=3)
 

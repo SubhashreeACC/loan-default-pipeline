@@ -1,6 +1,5 @@
 # tests/unit/test_trainer.py
 """Unit tests for the training module (mocked MLflow)."""
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -8,9 +7,9 @@ import pytest
 
 from src.training.trainer import (
     _build_xgb_model,
+    _cross_validate,
     _evaluate,
     _validate_thresholds,
-    _cross_validate,
 )
 
 
@@ -18,9 +17,7 @@ from src.training.trainer import (
 def binary_classification_data():
     rng = np.random.RandomState(42)
     n = 500
-    X = pd.DataFrame({
-        f"feat_{i}": rng.normal(size=n) for i in range(10)
-    })
+    X = pd.DataFrame({f"feat_{i}": rng.normal(size=n) for i in range(10)})
     # Make target weakly correlated with feat_0 so AUC > 0.5
     logits = X["feat_0"] * 2 + rng.normal(scale=0.5, size=n)
     y = pd.Series((logits > np.median(logits)).astype(int))
@@ -46,8 +43,14 @@ class TestEvaluateModel:
         model.set_params(early_stopping_rounds=None)
         model.fit(X, y)
         metrics = _evaluate(model, X, y, prefix="test")
-        for key in ["test_auc_roc", "test_f1", "test_precision",
-                    "test_recall", "test_brier_score", "test_avg_precision"]:
+        for key in [
+            "test_auc_roc",
+            "test_f1",
+            "test_precision",
+            "test_recall",
+            "test_brier_score",
+            "test_avg_precision",
+        ]:
             assert key in metrics
 
     def test_auc_within_valid_range(self, binary_classification_data):

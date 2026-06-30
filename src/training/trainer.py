@@ -4,15 +4,15 @@ XGBoost training pipeline with full MLflow experiment tracking.
 Handles train/val/test splits, hyperparameter logging, artefact storage,
 and automated staging → production promotion via the MLflow Model Registry.
 """
+
 from __future__ import annotations
 
 import json
 import logging
-import os
 import pickle
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import mlflow
 import mlflow.xgboost
@@ -45,6 +45,7 @@ val_cfg = model_cfg["validation"]
 # MLflow setup
 # ─────────────────────────────────────────────
 
+
 def setup_mlflow() -> MlflowClient:
     mlflow.set_tracking_uri(cfg["mlflow"]["tracking_uri"])
     mlflow.set_experiment(cfg["mlflow"]["experiment_name"])
@@ -55,12 +56,13 @@ def setup_mlflow() -> MlflowClient:
 # Training entry point
 # ─────────────────────────────────────────────
 
+
 def train(
     df: pd.DataFrame,
-    run_name: Optional[str] = None,
-    tags: Optional[dict] = None,
+    run_name: str | None = None,
+    tags: dict | None = None,
     cv_folds: int = 5,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Full training run: feature engineering → cross-validation → final fit →
     MLflow logging → model registration.
@@ -97,50 +99,63 @@ def train(
         val_size = cfg["data"]["val_split"] / (1 - test_size)
 
         X_trainval, X_test, y_trainval, y_test = train_test_split(
-            X, y, test_size=test_size,
-            stratify=y, random_state=xgb_cfg["random_state"]
+            X, y, test_size=test_size, stratify=y, random_state=xgb_cfg["random_state"]
         )
         X_train, X_val, y_train, y_val = train_test_split(
-            X_trainval, y_trainval, test_size=val_size,
-            stratify=y_trainval, random_state=xgb_cfg["random_state"]
+            X_trainval,
+            y_trainval,
+            test_size=val_size,
+            stratify=y_trainval,
+            random_state=xgb_cfg["random_state"],
         )
 
         logger.info(
             "Split: train=%d  val=%d  test=%d  default_rate=%.3f",
-            len(X_train), len(X_val), len(X_test), y_train.mean(),
+            len(X_train),
+            len(X_val),
+            len(X_test),
+            y_train.mean(),
         )
 
         # ── 3. Log parameters ────────────────────
-        mlflow.log_params({
-            "n_training_rows": len(X_train),
-            "n_val_rows": len(X_val),
-            "n_test_rows": len(X_test),
-            "n_features": X_train.shape[1],
-            "train_default_rate": float(y_train.mean()),
-            **xgb_cfg,
-        })
+        mlflow.log_params(
+            {
+                "n_training_rows": len(X_train),
+                "n_val_rows": len(X_val),
+                "n_test_rows": len(X_test),
+                "n_features": X_train.shape[1],
+                "train_default_rate": float(y_train.mean()),
+                **xgb_cfg,
+            }
+        )
 
-        mlflow.set_tags({
-            "pipeline_version": "1.0",
-            "feature_version": "1.0",
-            **(tags or {}),
-        })
+        mlflow.set_tags(
+            {
+                "pipeline_version": "1.0",
+                "feature_version": "1.0",
+                **(tags or {}),
+            }
+        )
 
         # ── 4. Cross-validation ──────────────────
         cv_scores = _cross_validate(X_trainval, y_trainval, cv_folds)
-        mlflow.log_metrics({
-            f"cv_auc_mean": cv_scores["auc_mean"],
-            f"cv_auc_std": cv_scores["auc_std"],
-        })
+        mlflow.log_metrics(
+            {
+                "cv_auc_mean": cv_scores["auc_mean"],
+                "cv_auc_std": cv_scores["auc_std"],
+            }
+        )
         logger.info(
             "CV AUC-ROC: %.4f ± %.4f",
-            cv_scores["auc_mean"], cv_scores["auc_std"],
+            cv_scores["auc_mean"],
+            cv_scores["auc_std"],
         )
 
         # ── 5. Final model training ──────────────
         model = _build_xgb_model()
         model.fit(
-            X_train, y_train,
+            X_train,
+            y_train,
             eval_set=[(X_val, y_val)],
             verbose=100,
         )
@@ -160,8 +175,9 @@ def train(
 
         # ── 7. Artefacts ─────────────────────────
         with tempfile.TemporaryDirectory() as tmp:
-            _save_artefacts(model, feat_pipeline, X_train, y_test,
-                            model.predict_proba(X_test)[:, 1], tmp)
+            _save_artefacts(
+                model, feat_pipeline, X_train, y_test, model.predict_proba(X_test)[:, 1], tmp
+            )
 
         # ── 8. Log model to registry ─────────────
         mlflow.xgboost.log_model(
@@ -191,6 +207,7 @@ def train(
 # Model construction
 # ─────────────────────────────────────────────
 
+
 def _build_xgb_model() -> xgb.XGBClassifier:
     return xgb.XGBClassifier(
         n_estimators=xgb_cfg["n_estimators"],
@@ -211,6 +228,7 @@ def _build_xgb_model() -> xgb.XGBClassifier:
 # Cross-validation
 # ─────────────────────────────────────────────
 
+
 def _cross_validate(X: pd.DataFrame, y: pd.Series, n_folds: int) -> dict:
     skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
     auc_scores = []
@@ -221,7 +239,8 @@ def _cross_validate(X: pd.DataFrame, y: pd.Series, n_folds: int) -> dict:
         es_idx = train_idx[-n_es:]
         tr_idx = train_idx[:-n_es]
         model.fit(
-            X.iloc[tr_idx], y.iloc[tr_idx],
+            X.iloc[tr_idx],
+            y.iloc[tr_idx],
             eval_set=[(X.iloc[es_idx], y.iloc[es_idx])],
             verbose=False,
         )
@@ -240,6 +259,7 @@ def _cross_validate(X: pd.DataFrame, y: pd.Series, n_folds: int) -> dict:
 # ─────────────────────────────────────────────
 # Evaluation
 # ─────────────────────────────────────────────
+
 
 def _evaluate(
     model: xgb.XGBClassifier,
@@ -264,16 +284,17 @@ def _evaluate(
 # Artefact persistence
 # ─────────────────────────────────────────────
 
-def _save_artefacts(
-    model, feat_pipeline, X_train, y_test, y_proba, tmp_dir: str
-) -> None:
+
+def _save_artefacts(model, feat_pipeline, X_train, y_test, y_proba, tmp_dir: str) -> None:
     tmp = Path(tmp_dir)
 
     # Feature importance
-    fi = pd.DataFrame({
-        "feature": X_train.columns,
-        "importance": model.feature_importances_,
-    }).sort_values("importance", ascending=False)
+    fi = pd.DataFrame(
+        {
+            "feature": X_train.columns,
+            "importance": model.feature_importances_,
+        }
+    ).sort_values("importance", ascending=False)
     fi_path = tmp / "feature_importance.csv"
     fi.to_csv(fi_path, index=False)
     mlflow.log_artifact(str(fi_path))
@@ -300,6 +321,7 @@ def _save_artefacts(
 # ─────────────────────────────────────────────
 # Registry promotion
 # ─────────────────────────────────────────────
+
 
 def _register_and_promote(
     client: MlflowClient,
@@ -333,8 +355,8 @@ def _register_and_promote(
     passes_validation = _validate_thresholds(metrics)
     if not passes_validation:
         logger.warning(
-            "Model version %s did NOT pass validation thresholds. "
-            "Remaining in Staging.", new_version
+            "Model version %s did NOT pass validation thresholds. Remaining in Staging.",
+            new_version,
         )
         return new_version
 
@@ -344,8 +366,9 @@ def _register_and_promote(
 
     if prod_auc is not None and new_auc <= prod_auc:
         logger.warning(
-            "New model AUC (%.4f) does not exceed Production AUC (%.4f). "
-            "Staying in Staging.", new_auc, prod_auc
+            "New model AUC (%.4f) does not exceed Production AUC (%.4f). Staying in Staging.",
+            new_auc,
+            prod_auc,
         )
         return new_version
 
@@ -358,7 +381,8 @@ def _register_and_promote(
     )
     logger.info(
         "Model version %s promoted to Production (AUC=%.4f)",
-        new_version, new_auc,
+        new_version,
+        new_auc,
     )
     mlflow.set_tag("promoted_to_production", "true")
     return new_version
@@ -386,7 +410,7 @@ def _validate_thresholds(metrics: dict) -> bool:
     return True
 
 
-def _get_production_auc(client: MlflowClient, model_name: str) -> Optional[float]:
+def _get_production_auc(client: MlflowClient, model_name: str) -> float | None:
     prod_versions = client.get_latest_versions(model_name, stages=["Production"])
     if not prod_versions:
         return None
@@ -399,16 +423,15 @@ def _get_production_auc(client: MlflowClient, model_name: str) -> Optional[float
 # Load production model for inference
 # ─────────────────────────────────────────────
 
-def load_production_model() -> Tuple[Any, str]:
+
+def load_production_model() -> tuple[Any, str]:
     """Load the current Production model from the MLflow registry."""
     setup_mlflow()
     model_uri = f"models:/{cfg['mlflow']['model_name']}/Production"
     try:
         model = mlflow.xgboost.load_model(model_uri)
         client = MlflowClient()
-        versions = client.get_latest_versions(
-            cfg["mlflow"]["model_name"], stages=["Production"]
-        )
+        versions = client.get_latest_versions(cfg["mlflow"]["model_name"], stages=["Production"])
         version = versions[0].version if versions else "unknown"
         logger.info("Loaded Production model version %s", version)
         return model, version

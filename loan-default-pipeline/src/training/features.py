@@ -3,17 +3,15 @@
 Feature engineering pipeline for loan default prediction.
 Transforms raw application data into model-ready features.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
 from src.utils.config import get_config
 
@@ -23,27 +21,51 @@ feat_cfg = cfg["model"]["features"]
 
 # Columns needed from raw table
 RAW_NUMERIC_COLS = [
-    "amt_income_total", "amt_credit", "amt_annuity", "amt_goods_price",
-    "days_birth", "days_employed", "region_population_relative",
-    "ext_source_1", "ext_source_2", "ext_source_3",
-    "cnt_children", "cnt_fam_members", "own_car_age",
-    "region_rating_client", "region_rating_client_w_city",
+    "amt_income_total",
+    "amt_credit",
+    "amt_annuity",
+    "amt_goods_price",
+    "days_birth",
+    "days_employed",
+    "region_population_relative",
+    "ext_source_1",
+    "ext_source_2",
+    "ext_source_3",
+    "cnt_children",
+    "cnt_fam_members",
+    "own_car_age",
+    "region_rating_client",
+    "region_rating_client_w_city",
     "hour_appr_process_start",
 ]
 
 RAW_CATEGORICAL_COLS = [
-    "name_contract_type", "code_gender", "flag_own_car", "flag_own_realty",
-    "name_income_type", "name_education_type", "name_family_status",
-    "name_housing_type", "occupation_type", "organization_type",
+    "name_contract_type",
+    "code_gender",
+    "flag_own_car",
+    "flag_own_realty",
+    "name_income_type",
+    "name_education_type",
+    "name_family_status",
+    "name_housing_type",
+    "occupation_type",
+    "organization_type",
     "weekday_appr_process_start",
 ]
 
 FLAG_COLS = [
-    "flag_mobil", "flag_emp_phone", "flag_work_phone",
-    "flag_cont_mobile", "flag_phone", "flag_email",
-    "reg_region_not_live_region", "reg_region_not_work_region",
-    "live_region_not_work_region", "reg_city_not_live_city",
-    "reg_city_not_work_city", "live_city_not_work_city",
+    "flag_mobil",
+    "flag_emp_phone",
+    "flag_work_phone",
+    "flag_cont_mobile",
+    "flag_phone",
+    "flag_email",
+    "reg_region_not_live_region",
+    "reg_region_not_work_region",
+    "live_region_not_work_region",
+    "reg_city_not_live_city",
+    "reg_city_not_work_city",
+    "live_city_not_work_city",
 ]
 
 TARGET_COL = "target"
@@ -53,6 +75,7 @@ ID_COL = "sk_id_curr"
 # ─────────────────────────────────────────────
 # Custom transformers
 # ─────────────────────────────────────────────
+
 
 class CreditRatioTransformer(BaseEstimator, TransformerMixin):
     """Adds domain-specific ratio features."""
@@ -150,10 +173,7 @@ class FlagAggregatorTransformer(BaseEstimator, TransformerMixin):
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         df = X.copy()
         available_flags = [c for c in self.flag_cols if c in df.columns]
-        region_flags = [
-            c for c in available_flags
-            if "region" in c or "city" in c
-        ]
+        region_flags = [c for c in available_flags if "region" in c or "city" in c]
         if region_flags:
             df["total_region_mismatches"] = df[region_flags].fillna(0).sum(axis=1)
 
@@ -186,9 +206,7 @@ class CategoricalEncoder(BaseEstimator, TransformerMixin):
             if n_unique > self.max_cardinality:
                 logger.debug("Dropping high-cardinality column: %s (%d unique)", col, n_unique)
                 continue
-            top_vals = (
-                X[col].value_counts().head(self.top_n).index.tolist()
-            )
+            top_vals = X[col].value_counts().head(self.top_n).index.tolist()
             self.encoding_map_[col] = top_vals
             for val in top_vals:
                 self.columns_.append(f"{col}_{val}".lower().replace(" ", "_"))
@@ -214,27 +232,33 @@ class CategoricalEncoder(BaseEstimator, TransformerMixin):
 # Feature pipeline
 # ─────────────────────────────────────────────
 
+
 def build_feature_pipeline() -> Pipeline:
     """
     Returns an sklearn Pipeline that transforms raw DataFrames
     into a numeric feature matrix ready for XGBoost.
     """
-    return Pipeline([
-        ("credit_ratios", CreditRatioTransformer()),
-        ("age_employment", AgeEmploymentTransformer()),
-        ("ext_scores", ExternalScoreTransformer()),
-        ("flag_agg", FlagAggregatorTransformer()),
-        ("cat_encode", CategoricalEncoder(
-            max_cardinality=feat_cfg["max_cardinality"],
-        )),
-    ])
+    return Pipeline(
+        [
+            ("credit_ratios", CreditRatioTransformer()),
+            ("age_employment", AgeEmploymentTransformer()),
+            ("ext_scores", ExternalScoreTransformer()),
+            ("flag_agg", FlagAggregatorTransformer()),
+            (
+                "cat_encode",
+                CategoricalEncoder(
+                    max_cardinality=feat_cfg["max_cardinality"],
+                ),
+            ),
+        ]
+    )
 
 
 def engineer_features(
     df: pd.DataFrame,
-    pipeline: Optional[Pipeline] = None,
+    pipeline: Pipeline | None = None,
     fit: bool = False,
-) -> Tuple[pd.DataFrame, pd.Series, Pipeline]:
+) -> tuple[pd.DataFrame, pd.Series, Pipeline]:
     """
     Apply feature engineering to a raw DataFrame.
 
@@ -255,9 +279,19 @@ def engineer_features(
     ids = df[ID_COL].copy() if ID_COL in df.columns else None
 
     # Select feature columns
-    drop_cols = [c for c in [TARGET_COL, ID_COL, "ingested_at", "data_batch_id",
-                              "source_file", "feature_version", "created_at"]
-                 if c in df.columns]
+    drop_cols = [
+        c
+        for c in [
+            TARGET_COL,
+            ID_COL,
+            "ingested_at",
+            "data_batch_id",
+            "source_file",
+            "feature_version",
+            "created_at",
+        ]
+        if c in df.columns
+    ]
     X = df.drop(columns=drop_cols)
 
     if fit:
@@ -282,16 +316,17 @@ def engineer_features(
     corr_threshold = feat_cfg.get("correlation_threshold", 0.95)
     X_out = _drop_correlated_features(X_out, corr_threshold)
 
-    logger.info("Feature engineering complete: %d columns → %d features",
-                len(df.columns), len(X_out.columns))
+    logger.info(
+        "Feature engineering complete: %d columns → %d features",
+        len(df.columns),
+        len(X_out.columns),
+    )
     return X_out, y, pipeline
 
 
 def _drop_correlated_features(df: pd.DataFrame, threshold: float) -> pd.DataFrame:
     corr_matrix = df.corr().abs()
-    upper = corr_matrix.where(
-        np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
-    )
+    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
     to_drop = [c for c in upper.columns if any(upper[c] > threshold)]
     if to_drop:
         logger.debug("Dropping %d correlated features", len(to_drop))

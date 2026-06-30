@@ -3,18 +3,16 @@
 Data ingestion module — loads raw Home Credit / LendingClub data into PostgreSQL.
 Supports initial bulk load and incremental batch loads.
 """
+
 from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
-import sqlalchemy as sa
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
@@ -84,11 +82,12 @@ RAW_TABLE = cfg["data"]["raw_table"]
 # Public API
 # ─────────────────────────────────────────────
 
+
 def ingest_csv(
     file_path: str | Path,
-    engine: Optional[Engine] = None,
+    engine: Engine | None = None,
     batch_size: int = 10_000,
-    source_label: Optional[str] = None,
+    source_label: str | None = None,
 ) -> dict:
     """
     Ingest a raw CSV file (Home Credit format) into the PostgreSQL raw table.
@@ -130,12 +129,17 @@ def ingest_csv(
         if chunk_num % 5 == 0:
             logger.info(
                 "  chunk %d → %d rows processed (inserted=%d, skipped=%d)",
-                chunk_num, total_rows, inserted, skipped,
+                chunk_num,
+                total_rows,
+                inserted,
+                skipped,
             )
 
     logger.info(
         "Ingestion complete: total=%d inserted=%d skipped=%d",
-        total_rows, inserted, skipped,
+        total_rows,
+        inserted,
+        skipped,
     )
     return {
         "batch_id": batch_id,
@@ -148,8 +152,8 @@ def ingest_csv(
 
 def ingest_dataframe(
     df: pd.DataFrame,
-    engine: Optional[Engine] = None,
-    batch_id: Optional[str] = None,
+    engine: Engine | None = None,
+    batch_id: str | None = None,
     source_label: str = "dataframe",
 ) -> dict:
     """Ingest a pre-loaded DataFrame (useful for testing / API ingestion)."""
@@ -161,8 +165,8 @@ def ingest_dataframe(
 
 
 def get_training_data(
-    engine: Optional[Engine] = None,
-    days_lookback: Optional[int] = None,
+    engine: Engine | None = None,
+    days_lookback: int | None = None,
 ) -> pd.DataFrame:
     """
     Retrieve labelled records from the raw table for training.
@@ -171,9 +175,7 @@ def get_training_data(
     engine = engine or get_engine()
     where_clause = "WHERE target IS NOT NULL"
     if days_lookback:
-        where_clause += (
-            f" AND ingested_at >= NOW() - INTERVAL '{days_lookback} days'"
-        )
+        where_clause += f" AND ingested_at >= NOW() - INTERVAL '{days_lookback} days'"
 
     query = f"""
         SELECT *
@@ -188,7 +190,7 @@ def get_training_data(
     return df
 
 
-def get_data_stats(engine: Optional[Engine] = None) -> dict:
+def get_data_stats(engine: Engine | None = None) -> dict:
     """Return basic statistics about the raw data table."""
     engine = engine or get_engine()
     query = f"""
@@ -211,9 +213,8 @@ def get_data_stats(engine: Optional[Engine] = None) -> dict:
 # Internal helpers
 # ─────────────────────────────────────────────
 
-def _preprocess_chunk(
-    df: pd.DataFrame, batch_id: str, source_label: str
-) -> pd.DataFrame:
+
+def _preprocess_chunk(df: pd.DataFrame, batch_id: str, source_label: str) -> pd.DataFrame:
     """Rename columns, add metadata, sanitise values."""
     # Rename only columns that exist in the mapping
     rename_map = {k: v for k, v in RAW_COLUMN_MAP.items() if k in df.columns}

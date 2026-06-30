@@ -3,14 +3,13 @@
 Streamlit monitoring dashboard for the Loan Default pipeline.
 Shows drift trends, model performance, and prediction statistics.
 """
-import os
-from datetime import datetime, timedelta
+
+from datetime import datetime
 
 import pandas as pd
+import plotly.express as px
 import sqlalchemy as sa
 import streamlit as st
-import plotly.express as px
-import plotly.graph_objects as go
 
 from src.utils.config import get_config
 from src.utils.db import get_engine
@@ -27,6 +26,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 # Data loaders
 # ─────────────────────────────────────────────
+
 
 @st.cache_data(ttl=300)
 def load_drift_history(days: int = 30) -> pd.DataFrame:
@@ -103,8 +103,9 @@ retrain_count = int(drift_df["retrain_triggered"].sum()) if not drift_df.empty e
 total_preds = int(pred_df["total"].sum()) if not pred_df.empty else 0
 
 with col1:
-    st.metric("Latest Drift Score", f"{latest_drift:.4f}",
-              delta="⚠️ DRIFT" if drift_detected else "✅ OK")
+    st.metric(
+        "Latest Drift Score", f"{latest_drift:.4f}", delta="⚠️ DRIFT" if drift_detected else "✅ OK"
+    )
 with col2:
     st.metric("Total Predictions", f"{total_preds:,}")
 with col3:
@@ -127,10 +128,12 @@ if not drift_df.empty:
         title="Data & Prediction Drift",
     )
     mon_cfg = cfg["monitoring"]
-    fig.add_hline(y=mon_cfg["psi_warning"], line_dash="dot",
-                  line_color="orange", annotation_text="Warning")
-    fig.add_hline(y=mon_cfg["psi_critical"], line_dash="dash",
-                  line_color="red", annotation_text="Critical")
+    fig.add_hline(
+        y=mon_cfg["psi_warning"], line_dash="dot", line_color="orange", annotation_text="Warning"
+    )
+    fig.add_hline(
+        y=mon_cfg["psi_critical"], line_dash="dash", line_color="red", annotation_text="Critical"
+    )
     # Mark retrain triggers
     retrain_events = drift_df[drift_df["retrain_triggered"]]
     if not retrain_events.empty:
@@ -151,16 +154,19 @@ col_a, col_b = st.columns(2)
 with col_a:
     st.subheader("📊 Daily Predictions")
     if not pred_df.empty:
-        fig = px.bar(pred_df, x="date", y="total", color="model_version",
-                     title="Prediction Volume")
+        fig = px.bar(pred_df, x="date", y="total", color="model_version", title="Prediction Volume")
         st.plotly_chart(fig, use_container_width=True)
 
 with col_b:
     st.subheader("⚠️ Default Rate Trend")
     if not pred_df.empty:
-        fig = px.line(pred_df, x="date", y="default_rate_pct",
-                      color="model_version",
-                      title="Predicted Default Rate (%)")
+        fig = px.line(
+            pred_df,
+            x="date",
+            y="default_rate_pct",
+            color="model_version",
+            title="Predicted Default Rate (%)",
+        )
         st.plotly_chart(fig, use_container_width=True)
 
 # ─── Pipeline runs ───────────────────────────
@@ -169,7 +175,7 @@ if not runs_df.empty:
     st.dataframe(
         runs_df.style.applymap(
             lambda v: "background-color: #d4edda" if v else "background-color: #f8d7da",
-            subset=["promoted_to_prod"]
+            subset=["promoted_to_prod"],
         ),
         use_container_width=True,
     )
@@ -177,12 +183,20 @@ if not runs_df.empty:
     # AUC trend
     prod_runs = runs_df[runs_df["promoted_to_prod"]].sort_values("started_at")
     if not prod_runs.empty:
-        fig = px.line(prod_runs, x="started_at", y="auc_roc",
-                      markers=True, title="Production Model AUC-ROC Over Time",
-                      labels={"auc_roc": "AUC-ROC", "started_at": "Trained At"})
-        fig.add_hline(y=cfg["model"]["validation"]["min_auc_roc"],
-                      line_dash="dot", line_color="red",
-                      annotation_text="Minimum threshold")
+        fig = px.line(
+            prod_runs,
+            x="started_at",
+            y="auc_roc",
+            markers=True,
+            title="Production Model AUC-ROC Over Time",
+            labels={"auc_roc": "AUC-ROC", "started_at": "Trained At"},
+        )
+        fig.add_hline(
+            y=cfg["model"]["validation"]["min_auc_roc"],
+            line_dash="dot",
+            line_color="red",
+            annotation_text="Minimum threshold",
+        )
         st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("No pipeline runs recorded yet.")
@@ -190,7 +204,5 @@ else:
 # ─── Footer ──────────────────────────────────
 st.divider()
 st.caption(
-    "Monitoring powered by Evidently AI | "
-    "Orchestrated by Apache Airflow | "
-    "Models tracked in MLflow"
+    "Monitoring powered by Evidently AI | Orchestrated by Apache Airflow | Models tracked in MLflow"
 )

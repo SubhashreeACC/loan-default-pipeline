@@ -1,12 +1,7 @@
 # tests/unit/test_utils.py
 """Unit tests for config loading and DB utility helpers."""
-import os
-from pathlib import Path
 
-import pandas as pd
-import pytest
-
-from src.utils.config import _substitute_env_vars, _resolve_values, get_config
+from src.utils.config import _resolve_values, _substitute_env_vars, get_config
 
 
 class TestEnvVarSubstitution:

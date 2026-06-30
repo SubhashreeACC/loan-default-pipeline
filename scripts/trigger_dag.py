@@ -7,6 +7,7 @@ Usage:
     python scripts/trigger_dag.py --dag loan_default_training
     python scripts/trigger_dag.py --dag loan_drift_monitoring --conf '{"force": true}'
 """
+
 import argparse
 import json
 import os

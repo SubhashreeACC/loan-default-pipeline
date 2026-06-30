@@ -1,7 +1,7 @@
 # tests/unit/test_validation.py
 """Unit tests for the schema/quick-check validation helpers."""
+
 import pandas as pd
-import pytest
 
 from src.data.validation import validate_schema
 

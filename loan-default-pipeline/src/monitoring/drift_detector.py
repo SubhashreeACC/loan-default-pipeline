@@ -5,6 +5,7 @@ Computes data drift, prediction drift, and model performance degradation.
 Persists results to PostgreSQL and generates HTML reports.
 Triggers retraining DAG when critical thresholds are breached.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,7 +14,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import pandas as pd
 import requests
@@ -47,17 +48,30 @@ REPORT_DIR.mkdir(parents=True, exist_ok=True)
 # ─────────────────────────────────────────────
 
 NUMERICAL_FEATURES = [
-    "credit_income_ratio", "annuity_income_ratio", "credit_term_months",
-    "goods_credit_ratio", "age_years", "employment_years",
-    "employed_to_age_ratio", "ext_source_mean", "ext_source_std",
-    "family_income_per_capita", "amt_income_total", "amt_credit",
+    "credit_income_ratio",
+    "annuity_income_ratio",
+    "credit_term_months",
+    "goods_credit_ratio",
+    "age_years",
+    "employment_years",
+    "employed_to_age_ratio",
+    "ext_source_mean",
+    "ext_source_std",
+    "family_income_per_capita",
+    "amt_income_total",
+    "amt_credit",
     "amt_annuity",
 ]
 
 CATEGORICAL_FEATURES = [
-    "gender_m", "contract_type_cash", "income_type_working",
-    "education_higher", "housing_type_house", "family_status_married",
-    "total_region_mismatches", "docs_provided_count",
+    "gender_m",
+    "contract_type_cash",
+    "income_type_working",
+    "education_higher",
+    "housing_type_house",
+    "family_status_married",
+    "total_region_mismatches",
+    "docs_provided_count",
     "ext_source_missing_cnt",
 ]
 
@@ -76,8 +90,9 @@ def get_column_mapping(include_target: bool = True) -> ColumnMapping:
 # Data loading
 # ─────────────────────────────────────────────
 
+
 def load_reference_data(
-    days: Optional[int] = None,
+    days: int | None = None,
     engine=None,
 ) -> pd.DataFrame:
     """Load reference window data (training-era distribution)."""
@@ -99,7 +114,7 @@ def load_reference_data(
 
 
 def load_current_data(
-    days: Optional[int] = None,
+    days: int | None = None,
     engine=None,
 ) -> pd.DataFrame:
     """Load current production window data."""
@@ -122,20 +137,23 @@ def load_current_data(
 # Drift reports
 # ─────────────────────────────────────────────
 
+
 def run_data_drift_report(
     reference: pd.DataFrame,
     current: pd.DataFrame,
     model_version: str,
     save_html: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Run Evidently data drift report comparing reference to current window.
     Returns drift results dict and saves HTML report.
     """
-    report = Report(metrics=[
-        DataDriftPreset(),
-        DataQualityPreset(),
-    ])
+    report = Report(
+        metrics=[
+            DataDriftPreset(),
+            DataQualityPreset(),
+        ]
+    )
 
     col_map = get_column_mapping(include_target=False)
 
@@ -169,13 +187,15 @@ def run_prediction_drift_report(
     current: pd.DataFrame,
     model_version: str,
     save_html: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run prediction drift (target drift) report."""
     report = Report(metrics=[TargetDriftPreset()])
 
-    ref_clean = reference[["prediction_proba"]].rename(
-        columns={"prediction_proba": "prediction_proba"}
-    ).copy()
+    ref_clean = (
+        reference[["prediction_proba"]]
+        .rename(columns={"prediction_proba": "prediction_proba"})
+        .copy()
+    )
     cur_clean = current[["prediction_proba"]].copy()
 
     report.run(
@@ -201,7 +221,7 @@ def run_performance_report(
     current: pd.DataFrame,
     model_version: str,
     save_html: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run model performance degradation report (requires actual labels)."""
     # Only use labelled current data
     cur_labelled = current[current["actual_label"].notna()].copy()
@@ -209,15 +229,14 @@ def run_performance_report(
 
     if len(cur_labelled) < mon_cfg["min_samples_for_drift"]:
         logger.warning(
-            "Insufficient labelled data (%d rows) for performance report. "
-            "Need %d.", len(cur_labelled), mon_cfg["min_samples_for_drift"]
+            "Insufficient labelled data (%d rows) for performance report. Need %d.",
+            len(cur_labelled),
+            mon_cfg["min_samples_for_drift"],
         )
         return {"report_type": "performance", "insufficient_data": True}
 
     report = Report(metrics=[ClassificationPreset()])
-    ref_perf = reference[
-        ["target", "prediction_proba", "prediction_label"]
-    ].dropna().copy()
+    ref_perf = reference[["target", "prediction_proba", "prediction_label"]].dropna().copy()
 
     report.run(
         reference_data=ref_perf,
@@ -244,12 +263,13 @@ def run_performance_report(
 # Drift decision logic
 # ─────────────────────────────────────────────
 
+
 def check_drift_and_trigger(
     data_drift: dict,
     pred_drift: dict,
     perf_results: dict,
-    dag_trigger_url: Optional[str] = None,
-) -> Tuple[bool, str]:
+    dag_trigger_url: str | None = None,
+) -> tuple[bool, str]:
     """
     Evaluate all drift signals and decide whether to trigger retraining.
 
@@ -265,7 +285,9 @@ def check_drift_and_trigger(
     # Prediction drift (JS divergence)
     js = pred_drift.get("overall_drift_score", 0)
     if js >= mon_cfg["js_divergence_critical"]:
-        reasons.append(f"Prediction drift JS={js:.4f} >= critical {mon_cfg['js_divergence_critical']}")
+        reasons.append(
+            f"Prediction drift JS={js:.4f} >= critical {mon_cfg['js_divergence_critical']}"
+        )
 
     # Performance degradation
     if not perf_results.get("insufficient_data"):
@@ -319,12 +341,13 @@ def _trigger_airflow_dag(trigger_url: str, reason: str) -> None:
 # Persistence
 # ─────────────────────────────────────────────
 
+
 def save_drift_report(
     report_type: str,
     model_version: str,
     drift_results: dict,
     retrain_triggered: bool = False,
-    dag_run_id: Optional[str] = None,
+    dag_run_id: str | None = None,
     engine=None,
 ) -> str:
     """Persist drift report to PostgreSQL."""
@@ -368,6 +391,7 @@ def save_drift_report(
 # Evidently result parsers
 # ─────────────────────────────────────────────
 
+
 def _parse_data_drift(result: dict) -> dict:
     try:
         drift_section = result["metrics"][0]["result"]
@@ -388,8 +412,12 @@ def _parse_data_drift(result: dict) -> dict:
         }
     except (KeyError, IndexError) as e:
         logger.warning("Could not parse data drift result: %s", e)
-        return {"report_type": "data_drift", "overall_drift_score": 0,
-                "is_drift_detected": False, "feature_drift": {}}
+        return {
+            "report_type": "data_drift",
+            "overall_drift_score": 0,
+            "is_drift_detected": False,
+            "feature_drift": {},
+        }
 
 
 def _parse_prediction_drift(result: dict) -> dict:
@@ -405,8 +433,11 @@ def _parse_prediction_drift(result: dict) -> dict:
         }
     except (KeyError, IndexError) as e:
         logger.warning("Could not parse prediction drift: %s", e)
-        return {"report_type": "prediction_drift", "overall_drift_score": 0,
-                "is_drift_detected": False}
+        return {
+            "report_type": "prediction_drift",
+            "overall_drift_score": 0,
+            "is_drift_detected": False,
+        }
 
 
 def _parse_performance(result: dict) -> dict:

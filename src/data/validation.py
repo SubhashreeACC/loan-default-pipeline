@@ -3,12 +3,12 @@
 Data validation using Great Expectations.
 Builds and runs expectation suites against raw and engineered features.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 import great_expectations as gx
 import pandas as pd
@@ -29,6 +29,7 @@ CHECKPOINT = cfg["great_expectations"]["checkpoint_name"]
 # ─────────────────────────────────────────────
 # Context bootstrap
 # ─────────────────────────────────────────────
+
 
 def get_ge_context() -> AbstractDataContext:
     """Return (or create) a Great Expectations FileDataContext."""
@@ -59,11 +60,10 @@ def _add_pg_datasource(context: AbstractDataContext) -> None:
 # Expectation suite definition
 # ─────────────────────────────────────────────
 
+
 def _create_expectation_suite(context: AbstractDataContext) -> None:
     """Define all expectations for the raw loan applications table."""
-    suite = context.add_or_update_expectation_suite(
-        expectation_suite_name=SUITE_NAME
-    )
+    suite = context.add_or_update_expectation_suite(expectation_suite_name=SUITE_NAME)
 
     # ── Schema expectations ──────────────────
     suite.add_expectation(
@@ -144,8 +144,8 @@ def _create_expectation_suite(context: AbstractDataContext) -> None:
             expectation_type="expect_column_values_to_be_between",
             kwargs={
                 "column": "days_birth",
-                "min_value": -30_000,   # ~82 years
-                "max_value": -6_500,    # ~18 years
+                "min_value": -30_000,  # ~82 years
+                "max_value": -6_500,  # ~18 years
                 "mostly": 0.99,
             },
         )
@@ -174,8 +174,12 @@ def _create_expectation_suite(context: AbstractDataContext) -> None:
 
     # ── Null rate guardrails ──────────────────
     high_completeness_cols = [
-        "amt_income_total", "amt_credit", "days_birth", "code_gender",
-        "name_income_type", "name_education_type",
+        "amt_income_total",
+        "amt_credit",
+        "days_birth",
+        "code_gender",
+        "name_income_type",
+        "name_education_type",
     ]
     for col in high_completeness_cols:
         suite.add_expectation(
@@ -211,10 +215,11 @@ def _create_checkpoint(context: AbstractDataContext) -> None:
 # Runtime validation
 # ─────────────────────────────────────────────
 
+
 def validate_dataframe(
     df: pd.DataFrame,
     batch_id: str,
-    context: Optional[AbstractDataContext] = None,
+    context: AbstractDataContext | None = None,
     raise_on_failure: bool = True,
 ) -> dict:
     """

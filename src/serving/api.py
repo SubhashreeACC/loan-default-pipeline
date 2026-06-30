@@ -4,28 +4,25 @@ FastAPI prediction service for the Loan Default model.
 Supports single and batch predictions, health checks,
 model metadata, and on-demand drift reporting.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from functools import lru_cache
-from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 import sqlalchemy as sa
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, status
+from fastapi import BackgroundTasks, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 
-from src.training.trainer import load_production_model
 from src.training.features import engineer_features
+from src.training.trainer import load_production_model
 from src.utils.config import get_config
 from src.utils.db import get_engine
 
@@ -36,11 +33,12 @@ cfg = get_config()
 # App state (model cache)
 # ─────────────────────────────────────────────
 
+
 class ModelState:
     model = None
     version: str = "unknown"
-    loaded_at: Optional[datetime] = None
-    feature_names: List[str] = []
+    loaded_at: datetime | None = None
+    feature_names: list[str] = []
     feature_pipeline = None
     lock = asyncio.Lock()
 
@@ -66,6 +64,7 @@ async def _load_model():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _load_model()
+
     # Background model refresh task
     async def _refresh_loop():
         ttl = cfg["serving"]["model_cache_ttl_seconds"]
@@ -75,6 +74,7 @@ async def lifespan(app: FastAPI):
                 await _load_model()
             except Exception as e:
                 logger.warning("Model refresh failed: %s", e)
+
     task = asyncio.create_task(_refresh_loop())
     yield
     task.cancel()
@@ -103,31 +103,33 @@ app.add_middleware(
 # Request / Response schemas
 # ─────────────────────────────────────────────
 
+
 class LoanApplication(BaseModel):
     """Single loan application for prediction."""
-    sk_id_curr: Optional[int] = Field(None, description="Applicant ID (for logging)")
+
+    sk_id_curr: int | None = Field(None, description="Applicant ID (for logging)")
     amt_income_total: float = Field(..., gt=0, description="Annual income")
     amt_credit: float = Field(..., gt=0, description="Loan amount")
-    amt_annuity: Optional[float] = Field(None, gt=0, description="Monthly annuity")
-    amt_goods_price: Optional[float] = Field(None, description="Goods price")
-    code_gender: Optional[str] = Field(None, description="M / F")
-    days_birth: Optional[int] = Field(None, description="Negative days since birth")
-    days_employed: Optional[int] = Field(None, description="Negative days employed")
-    name_income_type: Optional[str] = None
-    name_education_type: Optional[str] = None
-    name_family_status: Optional[str] = None
-    name_housing_type: Optional[str] = None
-    name_contract_type: Optional[str] = None
-    ext_source_1: Optional[float] = Field(None, ge=0, le=1)
-    ext_source_2: Optional[float] = Field(None, ge=0, le=1)
-    ext_source_3: Optional[float] = Field(None, ge=0, le=1)
-    cnt_children: Optional[int] = Field(None, ge=0)
-    cnt_fam_members: Optional[float] = Field(None, ge=0)
-    region_rating_client: Optional[int] = None
-    flag_own_car: Optional[str] = None
-    flag_own_realty: Optional[str] = None
-    occupation_type: Optional[str] = None
-    organization_type: Optional[str] = None
+    amt_annuity: float | None = Field(None, gt=0, description="Monthly annuity")
+    amt_goods_price: float | None = Field(None, description="Goods price")
+    code_gender: str | None = Field(None, description="M / F")
+    days_birth: int | None = Field(None, description="Negative days since birth")
+    days_employed: int | None = Field(None, description="Negative days employed")
+    name_income_type: str | None = None
+    name_education_type: str | None = None
+    name_family_status: str | None = None
+    name_housing_type: str | None = None
+    name_contract_type: str | None = None
+    ext_source_1: float | None = Field(None, ge=0, le=1)
+    ext_source_2: float | None = Field(None, ge=0, le=1)
+    ext_source_3: float | None = Field(None, ge=0, le=1)
+    cnt_children: int | None = Field(None, ge=0)
+    cnt_fam_members: float | None = Field(None, ge=0)
+    region_rating_client: int | None = None
+    flag_own_car: str | None = None
+    flag_own_realty: str | None = None
+    occupation_type: str | None = None
+    organization_type: str | None = None
 
     class Config:
         extra = "allow"  # Accept extra fields gracefully
@@ -135,7 +137,7 @@ class LoanApplication(BaseModel):
 
 class PredictionResponse(BaseModel):
     prediction_id: str
-    sk_id_curr: Optional[int]
+    sk_id_curr: int | None
     default_probability: float = Field(..., description="P(default) in [0,1]")
     prediction_label: int = Field(..., description="1=high risk, 0=low risk")
     risk_band: str = Field(..., description="LOW / MEDIUM / HIGH / VERY_HIGH")
@@ -145,12 +147,12 @@ class PredictionResponse(BaseModel):
 
 
 class BatchPredictionRequest(BaseModel):
-    applications: List[LoanApplication] = Field(..., max_items=1000)
+    applications: list[LoanApplication] = Field(..., max_items=1000)
     threshold: float = Field(0.5, ge=0.0, le=1.0)
 
 
 class BatchPredictionResponse(BaseModel):
-    predictions: List[PredictionResponse]
+    predictions: list[PredictionResponse]
     batch_id: str
     model_version: str
     total_applications: int
@@ -162,14 +164,14 @@ class BatchPredictionResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     model_version: str
-    model_loaded_at: Optional[str]
+    model_loaded_at: str | None
     uptime_seconds: float
 
 
 class ModelInfoResponse(BaseModel):
     model_name: str
     model_version: str
-    loaded_at: Optional[str]
+    loaded_at: str | None
     tracking_uri: str
     experiment_name: str
 
@@ -181,6 +183,7 @@ _START_TIME = time.time()
 # Helper functions
 # ─────────────────────────────────────────────
 
+
 def _proba_to_risk_band(proba: float) -> str:
     if proba < 0.15:
         return "LOW"
@@ -191,14 +194,14 @@ def _proba_to_risk_band(proba: float) -> str:
     return "VERY_HIGH"
 
 
-def _applications_to_df(applications: List[LoanApplication]) -> pd.DataFrame:
+def _applications_to_df(applications: list[LoanApplication]) -> pd.DataFrame:
     return pd.DataFrame([app.dict() for app in applications])
 
 
 def _predict_batch(
     df: pd.DataFrame,
     threshold: float = 0.5,
-) -> List[dict]:
+) -> list[dict]:
     """Run predictions on a DataFrame. Returns list of prediction dicts."""
     if state.model is None:
         raise HTTPException(
@@ -221,21 +224,24 @@ def _predict_batch(
 
     results = []
     for i, (proba, label) in enumerate(zip(probas, labels)):
-        results.append({
-            "prediction_id": str(uuid.uuid4()),
-            "sk_id_curr": df.get("sk_id_curr", [None] * len(df)).iloc[i]
-                          if "sk_id_curr" in df.columns else None,
-            "default_probability": round(float(proba), 6),
-            "prediction_label": int(label),
-            "risk_band": _proba_to_risk_band(float(proba)),
-            "model_version": state.version,
-            "predicted_at": now,
-            "threshold_used": threshold,
-        })
+        results.append(
+            {
+                "prediction_id": str(uuid.uuid4()),
+                "sk_id_curr": df.get("sk_id_curr", [None] * len(df)).iloc[i]
+                if "sk_id_curr" in df.columns
+                else None,
+                "default_probability": round(float(proba), 6),
+                "prediction_label": int(label),
+                "risk_band": _proba_to_risk_band(float(proba)),
+                "model_version": state.version,
+                "predicted_at": now,
+                "threshold_used": threshold,
+            }
+        )
     return results
 
 
-async def _log_predictions(predictions: List[dict], engine=None) -> None:
+async def _log_predictions(predictions: list[dict], engine=None) -> None:
     """Async background task to persist predictions to DB."""
     if not cfg["serving"]["log_predictions"]:
         return
@@ -258,6 +264,7 @@ async def _log_predictions(predictions: List[dict], engine=None) -> None:
 # ─────────────────────────────────────────────
 # Endpoints
 # ─────────────────────────────────────────────
+
 
 @app.get("/health", response_model=HealthResponse, tags=["ops"])
 async def health_check():
@@ -336,7 +343,7 @@ async def submit_feedback(prediction_id: str, actual_label: int):
         conn.execute(
             sa.text(
                 f"""
-                UPDATE {cfg['database']['schema']}.prediction_log
+                UPDATE {cfg["database"]["schema"]}.prediction_log
                 SET actual_label = :label, feedback_at = NOW()
                 WHERE prediction_id = :pid
                 """
@@ -353,7 +360,7 @@ async def monitoring_summary():
     query = f"""
         SELECT report_type, overall_drift_score, is_drift_detected,
                retrain_triggered, created_at
-        FROM {cfg['database']['schema']}.drift_reports
+        FROM {cfg["database"]["schema"]}.drift_reports
         ORDER BY created_at DESC
         LIMIT 10
     """
@@ -368,6 +375,7 @@ async def monitoring_summary():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "src.serving.api:app",
         host=cfg["serving"]["host"],

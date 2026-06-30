@@ -23,16 +23,16 @@ Task flow:
        ↓
   save_drift_report
 """
+
 from __future__ import annotations
 
 import logging
-import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator, BranchPythonOperator
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.operators.dummy import DummyOperator
+from airflow.operators.python import BranchPythonOperator, PythonOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.dates import days_ago
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ dag = DAG(
     dag_id="loan_drift_monitoring",
     default_args=default_args,
     description="Evidently AI drift monitoring with auto-retraining trigger",
-    schedule_interval="0 */6 * * *",   # every 6 hours
+    schedule_interval="0 */6 * * *",  # every 6 hours
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,
@@ -61,8 +61,10 @@ dag = DAG(
 # Task functions
 # ─────────────────────────────────────────────
 
+
 def load_reference_data_task(**context) -> dict:
     from src.monitoring.drift_detector import load_reference_data
+
     df = load_reference_data()
     if df.empty:
         raise ValueError("Empty reference dataset — cannot compute drift")
@@ -83,8 +85,9 @@ def load_current_data_task(**context) -> dict:
     min_samples = cfg["monitoring"]["min_samples_for_drift"]
     if len(df) < min_samples:
         logger.warning(
-            "Insufficient current data (%d rows, need %d). "
-            "Skipping drift check.", len(df), min_samples
+            "Insufficient current data (%d rows, need %d). Skipping drift check.",
+            len(df),
+            min_samples,
         )
         context["ti"].xcom_push("skip_drift", True)
         return {"rows": len(df), "skip": True}
@@ -97,6 +100,7 @@ def load_current_data_task(**context) -> dict:
 
 def run_data_drift_task(**context) -> dict:
     import pandas as pd
+
     from src.monitoring.drift_detector import run_data_drift_report
     from src.training.trainer import load_production_model
 
@@ -110,14 +114,17 @@ def run_data_drift_task(**context) -> dict:
 
     result = run_data_drift_report(ref, cur, model_version=version)
     context["ti"].xcom_push("data_drift_result", result)
-    logger.info("Data drift score: %.4f (detected=%s)",
-                result.get("overall_drift_score", 0),
-                result.get("is_drift_detected"))
+    logger.info(
+        "Data drift score: %.4f (detected=%s)",
+        result.get("overall_drift_score", 0),
+        result.get("is_drift_detected"),
+    )
     return result
 
 
 def run_prediction_drift_task(**context) -> dict:
     import pandas as pd
+
     from src.monitoring.drift_detector import run_prediction_drift_report
     from src.training.trainer import load_production_model
 
@@ -141,6 +148,7 @@ def run_prediction_drift_task(**context) -> dict:
 
 def run_performance_check_task(**context) -> dict:
     import pandas as pd
+
     from src.monitoring.drift_detector import run_performance_report
     from src.training.trainer import load_production_model
 
@@ -170,7 +178,9 @@ def evaluate_drift_signals_task(**context) -> str:
         return "no_retrain_needed"
 
     data_drift = context["ti"].xcom_pull(task_ids="run_data_drift", key="data_drift_result") or {}
-    pred_drift = context["ti"].xcom_pull(task_ids="run_prediction_drift", key="pred_drift_result") or {}
+    pred_drift = (
+        context["ti"].xcom_pull(task_ids="run_prediction_drift", key="pred_drift_result") or {}
+    )
     perf = context["ti"].xcom_pull(task_ids="run_performance_check", key="perf_result") or {}
 
     should_retrain, reason = check_drift_and_trigger(
@@ -192,11 +202,17 @@ def save_drift_report_task(**context) -> None:
 
     _, version = load_production_model()
 
-    should_retrain = context["ti"].xcom_pull(task_ids="evaluate_drift_signals", key="should_retrain") or False
-    retrain_reason = context["ti"].xcom_pull(task_ids="evaluate_drift_signals", key="retrain_reason") or ""
+    should_retrain = (
+        context["ti"].xcom_pull(task_ids="evaluate_drift_signals", key="should_retrain") or False
+    )
+    retrain_reason = (
+        context["ti"].xcom_pull(task_ids="evaluate_drift_signals", key="retrain_reason") or ""
+    )
 
     data_drift = context["ti"].xcom_pull(task_ids="run_data_drift", key="data_drift_result") or {}
-    pred_drift = context["ti"].xcom_pull(task_ids="run_prediction_drift", key="pred_drift_result") or {}
+    pred_drift = (
+        context["ti"].xcom_pull(task_ids="run_prediction_drift", key="pred_drift_result") or {}
+    )
     perf = context["ti"].xcom_pull(task_ids="run_performance_check", key="perf_result") or {}
 
     combined = {

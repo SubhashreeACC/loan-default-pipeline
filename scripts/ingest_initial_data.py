@@ -8,6 +8,7 @@ Usage:
     python scripts/ingest_initial_data.py --file /path/to/application_train.csv
     python scripts/ingest_initial_data.py --source kaggle --dataset home-credit
 """
+
 import argparse
 import logging
 import sys
@@ -15,8 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from src.data.ingestion import ingest_csv, get_data_stats
-from src.utils.db import get_engine, run_migration
+from src.data.ingestion import get_data_stats, ingest_csv
+from src.utils.db import run_migration
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,12 +30,16 @@ def main():
     parser = argparse.ArgumentParser(description="Bulk-load initial loan default dataset")
     parser.add_argument("--file", type=str, help="Path to local CSV file")
     parser.add_argument(
-        "--source", type=str, choices=["local", "kaggle"], default="local",
+        "--source",
+        type=str,
+        choices=["local", "kaggle"],
+        default="local",
         help="Data source type",
     )
     parser.add_argument("--dataset", type=str, default="home-credit-default-risk")
     parser.add_argument(
-        "--apply-migrations", action="store_true",
+        "--apply-migrations",
+        action="store_true",
         help="Apply DB schema migrations before ingesting",
     )
     parser.add_argument("--batch-size", type=int, default=10_000)

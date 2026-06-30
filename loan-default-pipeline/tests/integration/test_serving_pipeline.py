@@ -6,6 +6,7 @@ Run with: pytest tests/integration -m integration
 Requires a model already promoted to Production (run test_training_pipeline first,
 or rely on conftest.py's session-scoped fixture that trains+promotes one).
 """
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -48,6 +49,7 @@ def live_client(trained_production_model):
     FastAPI lifespan loads it.
     """
     from src.serving.api import app
+
     with TestClient(app) as client:
         yield client
 
@@ -71,6 +73,7 @@ class TestLivePrediction:
 
     def test_prediction_is_logged_to_database(self, live_client):
         import sqlalchemy as sa
+
         from src.utils.db import get_engine
 
         resp = live_client.post("/predict", json=SAMPLE_APPLICATION)
@@ -80,14 +83,12 @@ class TestLivePrediction:
         schema = cfg["database"]["schema"]
         # Background task may take a moment; poll briefly
         import time
+
         found = False
         for _ in range(10):
             with engine.connect() as conn:
                 row = conn.execute(
-                    sa.text(
-                        f"SELECT 1 FROM {schema}.prediction_log "
-                        f"WHERE prediction_id = :pid"
-                    ),
+                    sa.text(f"SELECT 1 FROM {schema}.prediction_log WHERE prediction_id = :pid"),
                     {"pid": pred_id},
                 ).fetchone()
             if row:
@@ -110,9 +111,11 @@ class TestLivePrediction:
 
 class TestFeedbackLoop:
     def test_submit_feedback_updates_record(self, live_client):
-        import sqlalchemy as sa
-        from src.utils.db import get_engine
         import time
+
+        import sqlalchemy as sa
+
+        from src.utils.db import get_engine
 
         resp = live_client.post("/predict", json=SAMPLE_APPLICATION)
         pred_id = resp.json()["prediction_id"]
@@ -126,8 +129,7 @@ class TestFeedbackLoop:
         with engine.connect() as conn:
             row = conn.execute(
                 sa.text(
-                    f"SELECT actual_label FROM {schema}.prediction_log "
-                    f"WHERE prediction_id = :pid"
+                    f"SELECT actual_label FROM {schema}.prediction_log WHERE prediction_id = :pid"
                 ),
                 {"pid": pred_id},
             ).fetchone()

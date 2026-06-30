@@ -24,6 +24,7 @@ Task flow:
        ↓
   notify_completion
 """
+
 from __future__ import annotations
 
 import json
@@ -33,7 +34,6 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator, ShortCircuitOperator
-from airflow.operators.bash import BashOperator
 from airflow.utils.dates import days_ago
 
 logger = logging.getLogger(__name__)
@@ -72,6 +72,7 @@ dag = DAG(
 # Task functions
 # ─────────────────────────────────────────────
 
+
 def check_data_availability(**context) -> bool:
     """Verify sufficient labelled data is available before training."""
     from src.data.ingestion import get_data_stats
@@ -89,7 +90,8 @@ def check_data_availability(**context) -> bool:
     if total_labelled < min_rows:
         logger.warning(
             "Insufficient labelled data: %d rows (need %d). Skipping.",
-            total_labelled, min_rows,
+            total_labelled,
+            min_rows,
         )
         return False
 
@@ -100,8 +102,8 @@ def check_data_availability(**context) -> bool:
 def ingest_new_data(**context) -> dict:
     """Ingest any new CSV files dropped in the ingestion watch folder."""
     import glob
+
     from src.data.ingestion import ingest_csv
-    from src.utils.config import get_config
 
     watch_dir = os.getenv("DATA_INGESTION_DIR", "/data/incoming")
     csv_files = sorted(glob.glob(f"{watch_dir}/*.csv"))
@@ -126,7 +128,6 @@ def validate_data(**context) -> dict:
     """Run Great Expectations validation on training dataset."""
     from src.data.ingestion import get_training_data
     from src.data.validation import validate_dataframe
-    from src.utils.config import get_config
 
     params = context["params"]
     days_lookback = params.get("days_lookback", 365)
@@ -144,11 +145,10 @@ def validate_data(**context) -> dict:
 
 def engineer_features_task(**context) -> dict:
     """Engineer features and persist to engineered_features table."""
+    import pickle
+
     from src.data.ingestion import get_training_data
     from src.training.features import engineer_features
-    from src.utils.config import get_config
-    from src.utils.db import get_engine
-    import pickle
 
     params = context["params"]
     days_lookback = params.get("days_lookback", 365)
@@ -177,7 +177,6 @@ def train_model_task(**context) -> dict:
     """Train XGBoost model and log to MLflow."""
     from src.data.ingestion import get_training_data
     from src.training.trainer import train
-    from src.utils.config import get_config
 
     params = context["params"]
     days_lookback = params.get("days_lookback", 365)
@@ -220,9 +219,10 @@ def promote_model_task(**context) -> None:
     The promotion to Production was handled inside trainer.py.
     This task records the pipeline run in the audit table.
     """
-    from src.utils.db import get_engine
-    from src.utils.config import get_config
     import pandas as pd
+
+    from src.utils.config import get_config
+    from src.utils.db import get_engine
 
     cfg = get_config()
     training_result = context["ti"].xcom_pull(task_ids="train_model", key="training_result")
@@ -267,8 +267,7 @@ def notify_completion(**context) -> None:
     training_result = context["ti"].xcom_pull(task_ids="train_model", key="training_result")
     metrics = training_result.get("metrics", {}) if training_result else {}
     logger.info(
-        "🎉 Training pipeline complete | "
-        "version=%s | AUC=%.4f | F1=%.4f | run_id=%s",
+        "🎉 Training pipeline complete | version=%s | AUC=%.4f | F1=%.4f | run_id=%s",
         training_result.get("model_version", "?"),
         metrics.get("test_auc_roc", 0),
         metrics.get("test_f1", 0),

@@ -6,6 +6,7 @@ Apply all SQL migration files in infra/migrations/ in order.
 Usage:
     python scripts/run_migrations.py
 """
+
 import logging
 import sys
 from pathlib import Path

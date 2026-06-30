@@ -1,5 +1,6 @@
 # src/utils/config.py
 """Singleton config loader with environment variable substitution."""
+
 from __future__ import annotations
 
 import os
@@ -10,7 +11,6 @@ from typing import Any
 
 import yaml
 
-
 CONFIG_PATH = Path(os.getenv("CONFIG_PATH", "config/config.yaml"))
 
 _ENV_VAR_PATTERN = re.compile(r"\$\{(\w+)(?::-(.*?))?\}")
@@ -18,9 +18,11 @@ _ENV_VAR_PATTERN = re.compile(r"\$\{(\w+)(?::-(.*?))?\}")
 
 def _substitute_env_vars(value: str) -> str:
     """Replace ${VAR:-default} patterns with environment values."""
+
     def _replace(match):
         var_name, default = match.group(1), match.group(2) or ""
         return os.environ.get(var_name, default)
+
     return _ENV_VAR_PATTERN.sub(_replace, value)
 
 
